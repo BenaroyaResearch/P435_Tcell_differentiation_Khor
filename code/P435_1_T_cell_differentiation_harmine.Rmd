@@ -46,6 +46,8 @@ library(edgeR)
 library(RColorBrewer)
 library(kableExtra)
 library(viridis)
+library(ggvenn)
+library(gplots)
 
 library(ComplexHeatmap)
 library(limma)
@@ -56,6 +58,9 @@ library(miscHelpers)
 library(RNAseQC)
 library(countSubsetNorm)
 
+library(clusterProfiler)
+library(enrichplot)
+
 library(magrittr)
 opts_chunk$set(
   fig.width = 6, fig.height = 4.25, cache = TRUE,
@@ -65,55 +70,113 @@ options(stringsAsFactors = FALSE)
 theme_set(
   theme_bw(20) +
     theme(panel.grid.major = element_blank(),
-          panel.grid.minor = element_blank(),
-          panel.border = element_rect(color = "black", fill = NA, size = 1),
-          axis.text = element_text(color = "black"),
-          axis.ticks = element_line(color = "black"),
-          axis.text.x = element_text(angle = 0)))
+      panel.grid.minor = element_blank(),
+      panel.border = element_rect(colour = "black", fill = NA, size = 1),
+      axis.text = element_text(colour = "black"),
+      axis.ticks = element_line(colour = "black"),
+      axis.text.x = element_text(angle = 0)))
 update_geom_defaults("point", list(shape = 16))
 grDevices::pdf.options(useDingbats = FALSE)
+
+# test_plot <- ggplot2::ggplot(mapping = ggplot2::aes(x = 1:10, y = 1:10)) + ggplot2::geom_point()
+# ggplot(mapping = aes(x = 1:10, y = 1:10)) + geom_point()
 ```
 
-```{r setFilenamesAndGlobalVariables}
+```{r set_filenames_and_global_variables}
 # set up directories
 dirRoot <-
-  file.path(
-    "~",
-    "Box", "Projects", # Box version
-    # "Documents", "Projects_local", # local version
-    "P435_Tcell_differentiation_Khor")
+  file.path("/Users/tedwards/Documents/projects/P435_Tcell_differentiation_Khor")
 dirPlots <- file.path("plots")
-dirDataSaved <- file.path("data_saved")
+# dirDataSaved <- file.path("data_saved")
+# dataDirOutput <- file.path("data_output")
+dataDirOutput <- "/Users/tedwards/Documents/projects/P435_Tcell_differentiation_Khor/data_output"
+dataDirSaved <- "/Users/tedwards/Documents/projects/P435_Tcell_differentiation_Khor/data_saved"
 
-dataDate <- "2022-02-10"
+dataDate <- "2024-05-13"
 filenameSuffix <- paste0("P435_1_T_cell_differentiation_harmine.", dataDate)
 
 projectNumberGenomicsCore <- "P435-1"
 ```
 
-```{r setDirectory, cache=FALSE}
+```{r set_directory, cache=FALSE}
 opts_knit$set(root.dir = dirRoot)
 setwd(dirRoot)
 
 if (!dir.exists(dirPlots)) dir.create(dirPlots)
-if (!dir.exists(dirDataSaved)) dir.create(dirDataSaved)
+if (!dir.exists(dataDirSaved)) dir.create(dataDirSaved)
+```
+
+```{r setupHelperFunctions}
+convert_mouse_to_human <- function(gene_list) {
+  output <- c()
+  mouse_human_genes <- read.csv(
+    "https://www.informatics.jax.org/downloads/reports/HOM_MouseHumanSequence.rpt",
+    sep = "\t"
+  )
+
+  for (gene in gene_list) {
+    class_key <- mouse_human_genes %>%
+      dplyr::filter(Symbol == gene & Common.Organism.Name == "mouse, laboratory") %>%
+      dplyr::pull(DB.Class.Key)
+
+    if (!identical(class_key, integer(0))) {
+      human_genes <- mouse_human_genes %>%
+        dplyr::filter(DB.Class.Key == class_key & Common.Organism.Name == "human") %>%
+        dplyr::pull(Symbol)
+
+      for (human_gene in human_genes) {
+        # output <- rbind(c(gene, human_gene), output)
+        output <- c(output, human_genes)
+      }
+    }
+  }
+
+  return(output)
+}
+
+convert_human_to_mouse <- function(gene_list) {
+  output <- c()
+  mouse_human_genes <- read.csv(
+    "https://www.informatics.jax.org/downloads/reports/HOM_MouseHumanSequence.rpt",
+    sep = "\t"
+  )
+
+  for (gene in gene_list) {
+    class_key <- mouse_human_genes %>%
+      dplyr::filter(Symbol == gene & Common.Organism.Name == "human") %>%
+      dplyr::pull(DB.Class.Key)
+
+    if (!identical(class_key, integer(0))) {
+      mouse_genes <- mouse_human_genes %>%
+        dplyr::filter(DB.Class.Key == class_key & Common.Organism.Name == "mouse, laboratory") %>%
+        dplyr::pull(Symbol)
+
+      for (mouse_gene in mouse_genes) {
+        # output <- rbind(c(gene, mouse_gene), output)
+        output <- c(output, mouse_genes)
+      }
+    }
+  }
+
+  return(output)
+}
 ```
 
 # Load project data
 
 ## Load project info and libraries
 
-```{r getProjectInfo, dependson="setFilenamesAndGlobalVariables"}
+```{r getProjectInfo, dependson="set_filenames_and_global_variables"}
 filenameProjectInfo <-
-  file.path(dirDataSaved, paste("projectInfo", filenameSuffix, "RDS", sep = "."))
-  
+  file.path(dataDirSaved, paste("projectInfo", filenameSuffix, "RDS", sep = "."))
+
 # check for local version of project info
 if (file.exists(filenameProjectInfo)) {
   projectInfo <- readRDS(filenameProjectInfo)
 } else {
   # read in projectInfo from ResearchDB
   projectInfo <- apird::getGcqProjectInfo(projectNumberGenomicsCore)
-  
+
   # save local copy
   saveRDS(projectInfo, file = filenameProjectInfo)
 }
@@ -127,14 +190,14 @@ projectInfo <-
   mutate(
     project =
       factor(project,
-             levels = str_sort(unique(project), numeric = TRUE))) %>%
+        levels = str_sort(unique(project), numeric = TRUE))) %>%
   dplyr::arrange(project)
 ```
 
 ```{r getProjectLibs, dependson="getProjectInfo"}
 filenameProjectLibs <-
-  file.path(dirDataSaved, paste("projectLibs", filenameSuffix, "RDS", sep = "."))
-  
+  file.path(dataDirSaved, paste("projectLibs", filenameSuffix, "RDS", sep = "."))
+
 # check for local version of project info
 if (file.exists(filenameProjectLibs)) {
   projectLibs <- readRDS(filenameProjectLibs)
@@ -156,15 +219,15 @@ if (file.exists(filenameProjectLibs)) {
         project = rep(names(projectLibs), times = sapply(projectLibs, length)),
         libid = unlist(projectLibs))
   }
-  
+
   projectLibs <-
     projectLibs %>%
     mutate(
       project =
         factor(project,
-               levels = str_sort(unique(project), numeric = TRUE))) %>%
+          levels = str_sort(unique(project), numeric = TRUE))) %>%
     dplyr::arrange(project, libid)
-  
+
   # save local copy
   saveRDS(projectLibs, file = filenameProjectLibs)
 }
@@ -174,7 +237,7 @@ if (file.exists(filenameProjectLibs)) {
 
 ```{r loadMetrics, dependson="getProjectLibs"}
 filenameMetrics <-
-  file.path(dirDataSaved, paste("metrics", filenameSuffix, "RDS", sep = "."))
+  file.path(dataDirSaved, paste("metrics", filenameSuffix, "RDS", sep = "."))
 
 # check for local version of metrics
 if (file.exists(filenameMetrics)) {
@@ -184,7 +247,7 @@ if (file.exists(filenameMetrics)) {
   metrics <-
     apird::getMetrics(projectLibs$libid) %>%
     dplyr::arrange(libid_fcid)
-  
+
   # save local copy
   saveRDS(metrics, file = filenameMetrics)
 }
@@ -203,7 +266,7 @@ metrics <-
 ### read in library-level annotation
 filenameRnaseqAnnotation <-
   file.path(
-    dirDataSaved,
+    dataDirSaved,
     paste("rnaseqAnnotation", filenameSuffix, "RDS", sep = "."))
 
 # check for local version of rnaseqAnnotation
@@ -216,9 +279,9 @@ if (file.exists(filenameRnaseqAnnotation)) {
     mutate( # make project a factor, sorted properly
       project =
         project %>%
-        factor(levels = str_sort(unique(project), numeric = TRUE))) %>%
+          factor(levels = str_sort(unique(project), numeric = TRUE))) %>%
     dplyr::arrange(project, libid)
-  
+
   # save local copy
   saveRDS(rnaseqAnnotation, file = filenameRnaseqAnnotation)
 }
@@ -231,25 +294,36 @@ rnaseqAnnotation <-
   coerce_NA_text() %>%
   remove_all_NA_rowcols() %>%
   dplyr::rename(
-    sex = sexAge,
     timepoint = timePoint) %>%
   mutate(
     dateCollected = standardize_dates(dateCollected),
     dateCreated = standardize_dates(dateCreated),
     dateUpdated = standardize_dates(dateUpdated),
-    timepointHours = 
+    timepointHours =
       timepoint %>%
-      str_extract("^[0-9]+") %>% 
-      as.numeric(),
+        str_extract("^[0-9]+") %>%
+        as.numeric(),
     timepoint =
       timepoint %>%
-      factor(levels = str_sort(unique(.), numeric = TRUE)),
+        factor(levels = str_sort(unique(.), numeric = TRUE)),
     stimulation =
       stimulation %>%
-      factor(levels = c("none", "Il-6, Il-1B, anti-Il-4, anti-Il-12, anti-IFNg, TGFb")),
+        factor(levels = c("none", "Il-6, Il-1B, anti-Il-4, anti-Il-12, anti-IFNg, TGFb")),
     treatment =
       treatment %>%
-      factor(levels = c("none", "10uM Harmine")))
+        str_replace_all("10uM Harmine", "10uM_Harmine") %>%
+        factor(levels = c("none", "10uM_Harmine"))
+  )
+
+# create a new column containing stim vs no_stim based on #stimulation
+rnaseqAnnotation <- rnaseqAnnotation %>%
+  mutate(
+    Th17_stim = case_when(
+      stimulation == "Il-6, Il-1B, anti-Il-4, anti-Il-12, anti-IFNg, TGFb" ~ "stim",
+      stimulation == "none" ~ "no_stim",
+      TRUE ~ NA_character_
+    )
+  )
 ```
 
 ```{r combineAnnotationMetrics, results="hide", dependson=c("loadMetrics", "cleanRnaseqAnnotation")}
@@ -262,6 +336,40 @@ design <-
   droplevels() %>%
   dplyr::arrange(project, libid)
 ```
+
+```{r loadGeneLists}
+# Alex Hu's approach from P435-2
+library(msigdbr)
+
+untidy_geneset <- function(gs) {
+  gs <- gs[order(gs$gs_name), ]
+  maxlen <- max(table(gs$gs_name))
+  bounds <- which(!duplicated(gs$gs_name))
+  bounds <- c(bounds, nrow(gs) + 1)
+
+  d <- rep("", maxlen)
+  l <- bounds[2] - bounds[1]
+  d[1:l] <- gs$gene_symbol[bounds[1]:(bounds[2] - 1)]
+
+  for (i in 2:(length(bounds) - 1)) {
+    dn <- rep("", maxlen)
+    l <- bounds[i + 1] - bounds[i]
+    dn[1:l] <- gs$gene_symbol[bounds[i]:(bounds[i + 1] - 1)]
+    d <- cbind(d, dn)
+  }
+  colnames(d) <- gs$gs_name[!duplicated(gs$gs_name)]
+  d <- data.frame(rbind(colnames(d), d))
+  return(d)
+}
+
+hallmark <- msigdbr(species = "Mus musculus", category = "H") %>% dplyr::filter(gs_cat == "H")
+hallmark <- untidy_geneset(hallmark)
+
+c7 <- msigdbr(species = "Mus musculus", category = "C7")
+c7 <- untidy_geneset(c7)
+c7Tcell <- dplyr::select(c7, contains("TCELL"))
+```
+
 
 ```{r setHeatmapColors}
 heatmap_colors <-
@@ -304,12 +412,12 @@ This looks exactly as expected - 4 samples at for each treatment at each timepoi
 
 ```{r setupPalettes, dependson=c("combineAnnotationMetrics", "loadPalettesAndSettings")}
 # generate palette for stimulation
-palStimulation <-
+pal.stimulation <-
   big_colorblind_pal(length(levels(design$stimulation))) %>%
   set_names(levels(design$stimulation))
 
 # generate palette for treatment
-palTreatment <-
+pal.treatment <-
   big_colorblind_pal(length(levels(design$treatment))) %>%
   set_names(levels(design$treatment))
 shapePal.treatment <-
@@ -332,7 +440,7 @@ pal.donorId <-
 
 # generate palette for sex
 pal.sex <-
-  c("F"="orange", "M"="blue")
+  c("F" = "orange", "M" = "blue")
 
 # color palette for plotting gene counts, e.g. on tSNE and UMAP plots
 cols.geneCounts <- c("gray90", "darkred")
@@ -347,15 +455,15 @@ rasterResolutionDpi <- 300
 ```{r loadCounts, dependson="getProjectLibs"}
 # set counts filename
 filenameCounts <-
-  file.path(dirDataSaved, paste("countsRaw", filenameSuffix, "RDS", sep = "."))
+  file.path(dataDirSaved, paste("countsRaw", filenameSuffix, "RDS", sep = "."))
 
 # check for counts already downloaed
 if (file.exists(filenameCounts)) {
   counts <- readRDS(filenameCounts)
 } else {
   counts <- apird::getGeneCounts(projectLibs$libid)
-  counts <- counts[order(rownames(counts)),]
-  
+  counts <- counts[order(rownames(counts)), ]
+
   saveRDS(counts, file = filenameCounts)
 }
 
@@ -375,7 +483,7 @@ counts <- counts[, colnames(counts) %in% design$libid]
 stopifnot(setequal(colnames(counts), design$libid))
 
 # make sure libraries in counts and metrics are in the same order
-design <- design[design$libid %in% colnames(counts),]
+design <- design[design$libid %in% colnames(counts), ]
 counts <- counts[, match(design$libid, colnames(counts))]
 stopifnot(identical(colnames(counts), design$libid))
 ```
@@ -410,10 +518,10 @@ First, by donorId:
 ```{r qcPlotReadCountsColorByDonorId, dependson=c("enforceLibraryMatchingAndOrder", "setupPalettes", "setQcCuts"), fig.width=8.5, fig.height=4.25}
 ggplot(
   design %>%
-    dplyr::arrange(fastq_total_reads/1E6) %>%
+    dplyr::arrange(fastq_total_reads / 1E6) %>%
     mutate(libidOrder = 1:nrow(.)),
-  mapping = aes(x = libidOrder, y = fastq_total_reads/1E6, fill = donorId)) +
-  geom_bar(stat="identity", color = NA) +
+  mapping = aes(x = libidOrder, y = fastq_total_reads / 1E6, fill = donorId)) +
+  geom_bar(stat = "identity", color = NA) +
   geom_hline(yintercept = qcCuts["fastq_total_reads"]) +
   scale_fill_manual(values = pal.donorId) +
   labs(x = "library", y = "total reads (millions)")
@@ -424,10 +532,10 @@ Next, by timepoint:
 ```{r qcPlotReadCountsColorByTimepoint, dependson=c("enforceLibraryMatchingAndOrder", "setupPalettes", "setQcCuts"), fig.width=7.8, fig.height=4.25}
 ggplot(
   design %>%
-    dplyr::arrange(fastq_total_reads/1E6) %>%
+    dplyr::arrange(fastq_total_reads / 1E6) %>%
     mutate(libidOrder = 1:nrow(.)),
-  mapping = aes(x = libidOrder, y = fastq_total_reads/1E6, fill = timepoint)) +
-  geom_bar(stat="identity", color = NA) +
+  mapping = aes(x = libidOrder, y = fastq_total_reads / 1E6, fill = timepoint)) +
+  geom_bar(stat = "identity", color = NA) +
   geom_hline(yintercept = qcCuts["fastq_total_reads"]) +
   scale_fill_manual(values = pal.timepoint) +
   labs(x = "library", y = "total reads (millions)")
@@ -438,12 +546,12 @@ Next, by treatment:
 ```{r qcPlotReadCountsColorByTreatment, dependson=c("enforceLibraryMatchingAndOrder", "setupPalettes", "setQcCuts"), fig.width=8, fig.height=4.25}
 ggplot(
   design %>%
-    dplyr::arrange(fastq_total_reads/1E6) %>%
+    dplyr::arrange(fastq_total_reads / 1E6) %>%
     mutate(libidOrder = 1:nrow(.)),
-  mapping = aes(x = libidOrder, y = fastq_total_reads/1E6, fill = treatment)) +
-  geom_bar(stat="identity", color = NA) +
+  mapping = aes(x = libidOrder, y = fastq_total_reads / 1E6, fill = treatment)) +
+  geom_bar(stat = "identity", color = NA) +
   geom_hline(yintercept = qcCuts["fastq_total_reads"]) +
-  scale_fill_manual(values = palTreatment) +
+  scale_fill_manual(values = pal.treatment) +
   labs(x = "library", y = "total reads (millions)")
 ```
 
@@ -488,11 +596,11 @@ design <-
   design %>%
   mutate(
     qc_pass =
-      (fastq_total_reads > (qcCuts["fastq_total_reads"]*1E6)) &
-      (pct_aligned > qcCuts["pct_aligned"]) & # check the numbers (decimal vs. percent)
-      (median_cv_coverage < qcCuts["median_cv_coverage"]))
+      (fastq_total_reads > (qcCuts["fastq_total_reads"] * 1E6)) &
+        (pct_aligned > qcCuts["pct_aligned"]) & # check the numbers (decimal vs. percent)
+        (median_cv_coverage < qcCuts["median_cv_coverage"]))
 
-designQc <- design %>% dplyr::filter(qc_pass ==TRUE)
+designQc <- design %>% dplyr::filter(qc_pass == TRUE)
 
 # filter counts object and make sure it's in the same order as designQc
 countsQc <- counts[, match(designQc$libid, colnames(counts))]
@@ -583,7 +691,7 @@ counts.tmp <-
   countsQc %>%
   tibble::rownames_to_column("ensgene") %>%
   left_join(
-    grcm38 %>%
+    annotables::grcm38 %>%
       dplyr::filter(
         (biotype %in% "protein_coding") |
           str_detect(biotype, "^(IG|TR)_(C|V|D|J|LV)_gene$")) %>%
@@ -593,11 +701,10 @@ counts.tmp <-
   as.data.table()
 
 ## use data.table to aggregate/sum counts for duplicated HGNC symbols (way faster than stats::aggregate)
-# this also drops rows with HGNC.symbols == NA, which should include any non-protein-coding genes
+# this also drops rows with HGNC.symbols==NA, which should include any non-protein-coding genes
 countsPc <-
   counts.tmp[
-    , lapply(.SD, sum), by = gene,
-    .SDcols = grep("^lib", colnames(counts.tmp), value = TRUE)] %>%
+    , lapply(.SD, sum), by = gene, .SDcols = grep("^lib", colnames(counts.tmp), value = TRUE)] %>%
   arrange(gene) %>%
   dplyr::filter(gene != "MTRNR2L1") %>% # exclude MTRNR2L1
   as.data.frame() %>%
@@ -616,10 +723,10 @@ countsPcFilteredNorm <-
 
 log2CountsPcFilteredNorm <-
   calc_norm_counts(
-    countsPc, design=designQc, libID_col = "libid",
+    countsPc, design = designQc, libID_col = "libid",
     min_cpm = 1, min_libs_perc = 0.1,
     normalize = TRUE, return_DGEcounts = TRUE) %>%
-    voom() %>%
+  voom() %>%
   `[[`("E")
 
 rm_tmp(ask = FALSE)
@@ -628,15 +735,15 @@ rm_tmp(ask = FALSE)
 ```{r writeOutCountsPcFilteredNorm, dependson="filterNormalizeGenes"}
 data.tmp <- log2CountsPcFilteredNorm
 colnames(data.tmp) <-
-  with(design[match(colnames(data.tmp), design$libid),],
-       paste(timepoint, treatment, donorId, sep = "_") %>%
-         str_replace_all(" ", "_"))
+  with(design[match(colnames(data.tmp), design$libid), ],
+    paste(timepoint, treatment, donorId, sep = "_") %>%
+      str_replace_all(" ", "_"))
 data.tmp %>%
   write.csv(
     file.path(
       "data_output",
       paste0("P435-1_counts_filtered_normalized_log_transformed.",
-             filenameSuffix, ".csv")))
+        filenameSuffix, ".csv")))
 
 rm_tmp(ask = FALSE)
 ```
@@ -648,14 +755,14 @@ pca <- calc_PCAs(countsPcFilteredNorm, log2_transform = TRUE)
 # get PCA results and merge with sample information stored in metrics
 pdatscores <-
   merge(designQc,
-        as.data.frame(pca$x),
-        by.x = "libid", by.y = "row.names")
+    as.data.frame(pca$x),
+    by.x = "libid", by.y = "row.names")
 ```
 
 ```{r pcaCorrelations, dependson="runPca"}
 # calculate correlations of experimental variables with PCs
 pcaCorrelations <-
-    calc_PCcors(pca, annotation = designQc, PCs = 1:20)
+  calc_PCcors(pca, annotation = designQc, PCs = 1:20)
 # pcaCorrelations["PC1",] %>% sort()
 # pcaCorrelations[
 #   order(abs(pcaCorrelations[,"timepoint"]), decreasing = TRUE),
@@ -666,34 +773,34 @@ pcaCorrelations <-
 
 The plots below show samples on PCs 1 and 2, and on PC2 vs. PC3 where they show the most separation by treatment
 
-```{r pcaPlotPc1Pc2ByTreatment, fig.width=7.5, fig.height=5, dependson=c("runPca", "setupPalettes")}
+```{r pca_plot_PC1_PC2_by_treatment, fig.width=7.5, fig.height=5, dependson=c("runPca", "setupPalettes")}
 PCs.tmp <- c("PC1", "PC2")
 ggplot(
   pdatscores,
-  aes_string(x = PCs.tmp[1], y = PCs.tmp[2], color = "treatment")) + 
+  aes_string(x = PCs.tmp[1], y = PCs.tmp[2], color = "treatment")) +
   geom_point(size = 3) +
   labs(
     x = pca$pvars.labs[
       as.numeric(str_extract(PCs.tmp[1], "(?<=PC)[0-9]+"))],
     y = pca$pvars.labs[
       as.numeric(str_extract(PCs.tmp[2], "(?<=PC)[0-9]+"))]) +
-  scale_color_manual(values = palTreatment)
+  scale_color_manual(values = pal.treatment)
 
 rm_tmp(ask = FALSE)
 ```
 
-```{r pcaPlotPc4Pc5ByTreatment, fig.width=7.5, fig.height=5, dependson=c("runPca", "setupPalettes")}
+```{r pca_plot_PC4_PC5_by_treatment, fig.width=7.5, fig.height=5, dependson=c("runPca", "setupPalettes")}
 PCs.tmp <- c("PC4", "PC5")
 ggplot(
   pdatscores,
-  aes_string(x = PCs.tmp[1], y = PCs.tmp[2], color = "treatment")) + 
+  aes_string(x = PCs.tmp[1], y = PCs.tmp[2], color = "treatment")) +
   geom_point(size = 3) +
   labs(
     x = pca$pvars.labs[
       as.numeric(str_extract(PCs.tmp[1], "(?<=PC)[0-9]+"))],
     y = pca$pvars.labs[
       as.numeric(str_extract(PCs.tmp[2], "(?<=PC)[0-9]+"))]) +
-  scale_color_manual(values = palTreatment)
+  scale_color_manual(values = pal.treatment)
 
 rm_tmp(ask = FALSE)
 ```
@@ -702,13 +809,13 @@ The samples separate well by treatment, although there appears to be more separa
 
 We can visualize this on these sames PCs. We color the points by timepoint, and use different shapes for the treatments.
 
-```{r pcaPlotPc1Pc2ColorByTimepointShapeByTreatment, fig.width=7.75, fig.height=5, dependson=c("runPca", "setupPalettes")}
+```{r pca_plot_PC1_PC2_color_by_timepoint_shape_by_treatment, fig.width=7.75, fig.height=5, dependson=c("runPca", "setupPalettes")}
 PCs.tmp <- c("PC1", "PC2")
 ggplot(
   pdatscores,
   aes_string(
     x = PCs.tmp[1], y = PCs.tmp[2],
-    color = "timepoint", fill = "timepoint", shape = "treatment")) + 
+    color = "timepoint", fill = "timepoint", shape = "treatment")) +
   geom_point(size = 3) +
   labs(
     x = pca$pvars.labs[
@@ -722,13 +829,13 @@ ggplot(
 rm_tmp(ask = FALSE)
 ```
 
-```{r pcaPlotPc4Pc5ColorByTimepointShapeByTreatment, fig.width=7.75, fig.height=5, dependson=c("runPca", "setupPalettes")}
+```{r pca_plot_PC4_PC5_color_by_timepoint_shape_by_treatment, fig.width=7.75, fig.height=5, dependson=c("runPca", "setupPalettes")}
 PCs.tmp <- c("PC4", "PC5")
 ggplot(
   pdatscores,
   aes_string(
     x = PCs.tmp[1], y = PCs.tmp[2],
-    color = "timepoint", fill = "timepoint", shape = "treatment")) + 
+    color = "timepoint", fill = "timepoint", shape = "treatment")) +
   geom_point(size = 3) +
   labs(
     x = pca$pvars.labs[
@@ -760,8 +867,7 @@ Ideally, we would see each library approaching an asymptote in the number of gen
 
 ```{r estimateSaturation, dependson="filterNormalizeGenes", results="hide"}
 filenameSaturationPc <-
-  file.path(dirDataSaved, 
-            paste("saturationPc", filenameSuffix, "RDS", sep = "."))
+  file.path(dataDirSaved, paste("saturationPc", filenameSuffix, "RDS", sep = "."))
 if (file.exists(filenameSaturationPc)) {
   saturationPc <- readRDS(filenameSaturationPc)
 } else {
@@ -772,34 +878,33 @@ if (file.exists(filenameSaturationPc)) {
 }
 ```
 
-```{r estimateSaturationMinCpm, dependson="filterNormalizeGenes", results="hide"}
-filenameSaturationPcMinCpm <-
-  file.path(dirDataSaved,
-            paste("saturationPcMinCpm", filenameSuffix, "RDS", sep = "."))
-if (file.exists(filenameSaturationPcMinCpm)) {
-  saturationPcMinCpm <- readRDS(filenameSaturationPcMinCpm)
+```{r estimateSaturation.minCpm_0.1, dependson="filterNormalizeGenes", results="hide"}
+filenameSaturationPcMinCpm_0.1 <-
+  file.path(dataDirSaved, paste("saturationPcMinCpm_0.1", filenameSuffix, "RDS", sep = "."))
+if (file.exists(filenameSaturationPcMinCpm_0.1)) {
+  saturationPcMinCpm_0.1 <- readRDS(filenameSaturationPcMinCpm_0.1)
 } else {
-  saturationPcMinCpm <-
+  saturationPcMinCpm_0.1 <-
     estimate_saturation(
       countsPc, method = "sampling",
       ndepths = 10, min_counts = NULL, min_cpm = 0.1,
       verbose = TRUE)
-  saveRDS(saturationPcMinCpm, file = filenameSaturationPcMinCpm)
+  saveRDS(saturationPcMinCpm_0.1, file = filenameSaturationPcMinCpm_0.1)
 }
 ```
 
-```{r plotSaturation, fig.width=10, fig.height=6, dependson=c("estimateSaturation", "estimateSaturationMinCpm", "inferSexByRna", "applyQcCuts")}
+```{r plotSaturation, fig.width=10, fig.height=6, dependson=c("estimateSaturation", "estimateSaturation.min_cpm_0.1", "inferSexByRna", "applyQcCuts")}
 ggplot(
-  saturationPcMinCpm %>%
+  saturationPcMinCpm_0.1 %>%
     dplyr::rename(libid = sample) %>%
     right_join(designQc %>% dplyr::select(libid, timepoint)),
   mapping = aes(x = depth, y = sat, group = libid, color = timepoint)) +
   geom_path(size = 0.5, alpha = 0.7) +
   scale_color_manual(values = pal.timepoint) +
-  # coord_cartesian(xlim = c(0, 1100000), ylim = c(0, 5400)) +
+  # coord_cartesian(xlim=c(0,1100000), ylim=c(0,5400)) +
   # scale_x_continuous(
-  #   breaks = seq(0, 1000000, length.out = 5), 
-  #   labels = seq(0, 1000000, length.out = 5) / 1000000) +
+  #   breaks=seq(0,1000000,length.out=5),
+  #   labels=seq(0,1000000,length.out=5)/1000000) +
   labs(x = "Aligned reads (millions)", y = "Estimated genes detected")
 ```
 
@@ -823,7 +928,8 @@ To determine which variables are associated with the greatest variation among li
 ```{r plotPcaCorrelationHeatmap, dependson="pcaCorrelations", fig.width=10, fig.height=8}
 nPlots.tmp <- 1 # split the heatmap into this many separate plots
 colCutVector.tmp <-
-  if (nPlots.tmp > 1) {as.numeric(cut(1:ncol(pcaCorrelations), nPlots.tmp))
+  if (nPlots.tmp > 1) {
+    as.numeric(cut(1:ncol(pcaCorrelations), nPlots.tmp))
   } else rep(1, ncol(pcaCorrelations))
 # pcaCorrelations["PC1",] %>% sort()
 for (i in unique(colCutVector.tmp))
@@ -887,7 +993,7 @@ The plot below shows PC1 vs. PC2, with samples colored by treatment
 ```{r pcaPlotsPc1Pc2ByTreatment, fig.width=7.75, fig.height=5, dependson=c("runPca", "setupPalettes")}
 PCs.tmp <- c("PC1", "PC2")
 colorVar.tmp <- "treatment"
-palToUse.tmp <- palTreatment
+palToUse.tmp <- pal.treatment
 
 ggplot(
   pdatscores,
@@ -910,7 +1016,7 @@ The plot below shows PC4 vs. PC5, with samples colored by treatment
 ```{r pcaPlotsPc4Pc5ByTreatment, fig.width=7.75, fig.height=5, dependson=c("runPca", "setupPalettes")}
 PCs.tmp <- c("PC4", "PC5")
 colorVar.tmp <- "treatment"
-palToUse.tmp <- palTreatment
+palToUse.tmp <- pal.treatment
 
 ggplot(
   pdatscores,
@@ -956,141 +1062,1628 @@ This plot shows substantial separation by donor.
 
 For the differential expression analyses, we will build a model including all conditions, then extract the relevant contrasts. We incorporate donorId in the models order to make these analyses effectively paired.
 
-```{r limmaTimepointTreatment, dependson="filterNormalizeGenes"}
-condition.tmp <- 
+```{r limma.timepointTreatment, dependson="filterNormalizeGenes"}
+condition.tmp <-
   with(
     designQc,
     !is.na(timepoint) & !is.na(treatment))
-masterTimepointTreatment <-
+master.timepointTreatment <-
   designQc %>%
   filter(condition.tmp) %>%
   droplevels()
-dgeCountsTimepointTreatment <-
+DGECounts.timepointTreatment <-
   calc_norm_counts(
     counts = countsPc,
-    design = masterTimepointTreatment, libID_col = "libid",
+    design = master.timepointTreatment, libID_col = "libid",
     min_cpm = 1, min_libs_perc = 0.1,
     normalize = TRUE, return_DGEcounts = TRUE)
-masterTimepointTreatment <-
-  masterTimepointTreatment[
-    match(colnames(dgeCountsTimepointTreatment),
-          masterTimepointTreatment[["libid"]]),]
+master.timepointTreatment <-
+  master.timepointTreatment[
+    match(colnames(DGECounts.timepointTreatment),
+      master.timepointTreatment[["libid"]]), ]
 
 # design is a little weird because the baseline sample is present only for treatment == "none"
-designMatTimepointTreatment <-
+DesignMat.timepointTreatment <-
   model.matrix(
     ~ timepoint + timepoint:treatment, # usually include sex here, but all mice were male
-    data = masterTimepointTreatment)
+    data = master.timepointTreatment)
 # remove design matrix column with no matching samples
-designMatTimepointTreatment <-
-  designMatTimepointTreatment[, colSums(designMatTimepointTreatment) > 0]
-vwtsTimepointTreatment <-
+DesignMat.timepointTreatment <-
+  DesignMat.timepointTreatment[, colSums(DesignMat.timepointTreatment) > 0]
+vwts.timepointTreatment <-
   voomWithQualityWeights(
-    dgeCountsTimepointTreatment,
-    design = designMatTimepointTreatment,
+    DGECounts.timepointTreatment,
+    design = DesignMat.timepointTreatment,
     plot = FALSE, span = 0.2) # reduce span to better model low-count genes
-corfitTimepointTreatment <-
+corfit.timepointTreatment <-
   duplicateCorrelation(
-    vwtsTimepointTreatment,
-    design = designMatTimepointTreatment,
-    block = masterTimepointTreatment$donorId)
-vfitTimepointTreatment <-
-  lmFit(vwtsTimepointTreatment,
-        block = masterTimepointTreatment$donorId,
-        correlation = corfitTimepointTreatment$consensus.correlation)
+    vwts.timepointTreatment,
+    design = DesignMat.timepointTreatment,
+    block = master.timepointTreatment$donorId)
+vfit.timepointTreatment <-
+  lmFit(vwts.timepointTreatment,
+    block = master.timepointTreatment$donorId,
+    correlation = corfit.timepointTreatment$consensus.correlation)
 
 rm_tmp(ask = FALSE)
 ```
 
+# set up DGE for (Th17 (at 5h) vs Naive) vs (harmine vs Naive)
+```{r limma.stimulationTreatment, dependson="filterNormalizeGenes"}
+condition.tmp <-
+  with(
+    designQc,
+    !is.na(timepoint) & !is.na(treatment) & !is.na(Th17_stim))
+master.stimulationTreatment <-
+  designQc %>%
+  filter(condition.tmp) %>%
+  droplevels()
+master.stimulationTreatment$DGEgroup <-
+  factor(paste0(master.stimulationTreatment$Th17_stim, "_",
+    master.stimulationTreatment$treatment, "_",
+    master.stimulationTreatment$timepoint))
+DGECounts.stimulationTreatment <-
+  calc_norm_counts(
+    counts = countsPc,
+    design = master.stimulationTreatment, libID_col = "libid",
+    min_cpm = 1, min_libs_perc = 0.1,
+    normalize = TRUE, return_DGEcounts = TRUE)
+master.stimulationTreatment <-
+  master.stimulationTreatment[
+    match(colnames(DGECounts.stimulationTreatment),
+      master.stimulationTreatment[["libid"]]), ]
+
+DesignMat.stimulationTreatment <- model.matrix(~ 0 + DGEgroup, data = master.stimulationTreatment)
+colnames(DesignMat.stimulationTreatment)  <- stringr::str_remove(colnames(DesignMat.stimulationTreatment), "DGEgroup")
+
+vwts.stimulationTreatment  <- voom(DGECounts.stimulationTreatment, design = DesignMat.stimulationTreatment, plot = TRUE, span = 0.2)
+
+cor <- duplicateCorrelation(vwts.stimulationTreatment, DesignMat.stimulationTreatment, block = master.stimulationTreatment$donorId)
+
+vwts.stimulationTreatment  <- voom(DGECounts.stimulationTreatment,
+  design = DesignMat.stimulationTreatment,
+  correlation = cor$consensus.correlation,
+  plot = TRUE, span = 0.2)
+
+fit.stimulationTreatment <- lmFit(vwts.stimulationTreatment,
+  design = DesignMat.stimulationTreatment,
+  block = master.stimulationTreatment$donorId,
+  correlation = cor$consensus.correlation)
+
+fit.stimulationTreatment <- eBayes(fit.stimulationTreatment)
+
+contrasts.matrix <- makeContrasts(
+  Th17VsNaive = ((stim_10uM_Harmine_24h +
+    stim_10uM_Harmine_48h +
+    stim_10uM_Harmine_5h +
+    stim_10uM_Harmine_96h +
+    stim_none_24h +
+    stim_none_48h +
+    stim_none_5h +
+    stim_none_96h) / 8) -
+    (no_stim_none_0),
+  HarVsNaive = (stim_10uM_Harmine_24h +
+    stim_10uM_Harmine_48h +
+    stim_10uM_Harmine_5h +
+    stim_10uM_Harmine_96h) / 4 -
+    (no_stim_none_0),
+  NoHarVsNaive = (stim_none_24h +
+    stim_none_48h +
+    stim_none_5h +
+    stim_none_96h) / 4 -
+    (no_stim_none_0),
+  HarVsNoHar5h = (stim_10uM_Harmine_5h) - (stim_none_5h),
+  HarVsNoHar24h = (stim_10uM_Harmine_24h) - (stim_none_24h),
+  HarVsNoHar48h = (stim_10uM_Harmine_48h) - (stim_none_48h),
+  HarVsNoHar96h = (stim_10uM_Harmine_96h) - (stim_none_96h),
+  Har5hVsNaive = stim_10uM_Harmine_5h - no_stim_none_0,
+  Har24hVsNaive = stim_10uM_Harmine_24h - no_stim_none_0,
+  Har48hVsNaive = stim_10uM_Harmine_48h - no_stim_none_0,
+  Har96hVsNaive = stim_10uM_Harmine_96h - no_stim_none_0,
+  NoHar5hVsNaive = stim_none_5h - no_stim_none_0,
+  NoHar24hVsNaive = stim_none_24h - no_stim_none_0,
+  NoHar48hVsNaive = stim_none_48h - no_stim_none_0,
+  NoHar96hVsNaive = stim_none_96h - no_stim_none_0,
+  levels = DesignMat.stimulationTreatment)
+
+# truncated contrasts.matrix for GSEA focusing on 5h timepoint
+# contrasts.matrix <- makeContrasts(
+#   Th17VsNaive = ((stim_10uM_Harmine_24h +
+#     stim_10uM_Harmine_48h +
+#     stim_10uM_Harmine_5h +
+#     stim_10uM_Harmine_96h +
+#     stim_none_24h +
+#     stim_none_48h +
+#     stim_none_5h +
+#     stim_none_96h) / 8) -
+#     (no_stim_none_0),
+#   HarVsNaive = (stim_10uM_Harmine_24h +
+#     stim_10uM_Harmine_48h +
+#     stim_10uM_Harmine_5h +
+#     stim_10uM_Harmine_96h) / 4 -
+#     (no_stim_none_0),
+#   NoHarVsNaive = (stim_none_24h +
+#     stim_none_48h +
+#     stim_none_5h +
+#     stim_none_96h) / 4 -
+#     (no_stim_none_0),
+#   HarVsNoHar5h = (stim_10uM_Harmine_5h) - (stim_none_5h),
+#   Har5hVsNaive = stim_10uM_Harmine_5h - no_stim_none_0,
+#   NoHar5hVsNaive = stim_none_5h - no_stim_none_0,
+#   levels = DesignMat.stimulationTreatment)
+
+fit.stimulationTreatment <- contrasts.fit(fit.stimulationTreatment, contrasts.matrix)
+
+fit.stimulationTreatment  <- eBayes(fit.stimulationTreatment)
+
+# topTableBaselineVsScreen <- topTable(vfit.cellType_contrasts, coef = "baselineVsScreen", number = Inf, sort.by = "P")
+# topTableBaselineVsScreen$gene <- rownames(topTableBaselineVsScreen) # get genenames from rownames
+
+# p_cutoff <- 0.05
+# logfc_cutoff <- 1
+# sig.genes <- topTableBaselineVsScreen$adj.P.Val <= p_cutoff
+# print(table(sig.genes))
+library(openxlsx)
+comparisons <- list()
+for (i in 1:ncol(contrasts.matrix)) {
+  compname <- colnames(contrasts.matrix)[i]
+  z <- topTable (fit.stimulationTreatment, coef = i, number = Inf, sort.by = "P")
+  z$gene <- rownames(z)
+  comparisons[[compname]] <- z
+  print(compname)
+  sigs <- z$adj.P.Val <= 0.05
+  print(table(sigs))
+  filepath <- file.path(dataDirOutput, paste0(compname, "_DE.xlsx"))
+  openxlsx::write.xlsx(z, filepath)
+}
+
+list2env(comparisons, envir = .GlobalEnv)
+
+
+# # design is a little weird because the baseline sample is present only for treatment == "none"
+# DesignMat.stimulationTreatment <-
+#   model.matrix(
+#     ~ timepoint + timepoint:treatment, # usually include sex here, but all mice were male
+#     data = master.stimulationTreatment)
+# # remove design matrix column with no matching samples
+# DesignMat.stimulationTreatment <-
+#   DesignMat.stimulationTreatment[, colSums(DesignMat.stimulationTreatment) > 0]
+# vwts.stimulationTreatment <-
+#   voomWithQualityWeights(
+#     DGECounts.stimulationTreatment,
+#     design = DesignMat.stimulationTreatment,
+#     plot = FALSE, span = 0.2) # reduce span to better model low-count genes
+# corfit.stimulationTreatment <-
+#   duplicateCorrelation(
+#     vwts.stimulationTreatment,
+#     design = DesignMat.stimulationTreatment,
+#     block = master.stimulationTreatment$donorId)
+# vfit.stimulationTreatment <-
+#   lmFit(vwts.stimulationTreatment,
+#     block = master.stimulationTreatment$donorId,
+#     correlation = corfit.stimulationTreatment$consensus.correlation)
+
+rm_tmp(ask = FALSE)
+```
+
+```{r GSEAroast}
+gene_key <- read.table("/Users/tedwards/Documents/stored_analysis_files/ensemblkey_GRCm38.txt", header = TRUE, sep = "\t", na.strings = "")
+
+# getGSEAS_contrast function is from AHu`s P435-2 script
+getGSEAS_contrast <- function(comps, vwts, contmat, genesets, nrots = 5000) {
+  dmat <- vwts$design
+  gseas <- list()
+  for (comp in names(comps)) {
+    if (grepl("ntercept", comp)) {
+      next
+    }
+    for (gs in names(genesets)) {
+      compname <- paste0(gs, " ", comp)
+      print(compname)
+      if (compname %in% names(gseas)) {
+        next
+      }
+      r <- roast(
+        y = vwts,
+        index = ids2indices(genesets[[gs]], identifiers = gene_key$mgi_symbol[match(rownames(vwts), gene_key$mgi_symbol)]),
+        design = dmat,
+        contrast = contmat[colnames(dmat), comp],
+        nrot = nrots)
+      sigsets <- rownames(r)[r$FDR <= 0.1] # | r$FDR.Mixed <= 0.05]
+      print(length(sigsets))
+      if (length(sigsets) > 0) {
+        print(r[sigsets, ])
+      }
+      gseas[[compname]]  <- r
+      # write.table(r,paste0(plotdir,"interactionmodel_filtered/",comp,"_hallmark.txt"),sep="\t",quote=FALSE,col.names=NA)
+    }
+  }
+  return(gseas)
+}
+
+# getGSEAS_contrast function is from AHu`s P435-2 script
+getGSEAS_contrast_block <- function(comps, vwts, contmat, genesets, blocker, consensus_correlation, nrots = 5000) {
+  dmat <- vwts$design
+  gseas <- list()
+  for (comp in names(comps)) {
+    if (grepl("ntercept", comp)) {
+      next
+    }
+    for (gs in names(genesets)) {
+      compname <- paste0(gs, " ", comp)
+      print(compname)
+      if (compname %in% names(gseas)) {
+        next
+      }
+      r <- roast(
+        y = vwts,
+        index = ids2indices(genesets[[gs]], identifiers = gene_key$mgi_symbol[match(rownames(vwts), gene_key$mgi_symbol)]),
+        design = dmat,
+        contrast = contmat[colnames(dmat), comp],
+        block = blocker,
+        correlation = consensus_correlation,
+        nrot = nrots)
+      sigsets <- rownames(r)[r$FDR <= 0.1] # | r$FDR.Mixed <= 0.05]
+      print(length(sigsets))
+      if (length(sigsets) > 0) {
+        print(r[sigsets, ])
+      }
+      gseas[[compname]]  <- r
+      # write.table(r,paste0(plotdir,"interactionmodel_filtered/",comp,"_hallmark.txt"),sep="\t",quote=FALSE,col.names=NA)
+    }
+  }
+  return(gseas)
+}
+
+# index = ids2indices(hallmarkGeneListsMouse[[1]], identifiers = gene_key$symbol[match(rownames(vwts.stimulationTreatment), gene_key$symbol)])
+
+# get GSEAs
+# gseas <- getGSEAS_contrast(comparisons, vwts.visit, contrasts.matrix, geneModules, 10000)
+gseasHallmark <- getGSEAS_contrast_block(comparisons,
+  vwts.stimulationTreatment, # fit.stimulationTreatment , #vwts.cellType,
+  contrasts.matrix,
+  hallmark,
+  blocker = design$donorId,
+  consensus_correlation = cor$consensus.correlation,
+  10000)
+
+gseasC7Tcell <- getGSEAS_contrast_block(comparisons,
+  vwts.stimulationTreatment, # fit.stimulationTreatment , #vwts.cellType,
+  contrasts.matrix,
+  c7Tcell,
+  blocker = design$donorId,
+  consensus_correlation = cor$consensus.correlation,
+  10000)
+
+# function that creates a volcano plot with supplied genes highlighted
+# gtable = treatmentPeriod
+#   outfile = paste0(plotDir,"/",dataDate,"_","gsea_CXCR1Mod_treatmentPeriod.png")
+#   title = titleString=
+#   gs = highlightGenes
+#    p_cutoff = 0.05
+#    fc_cutoff = 1.0
+#    labp = 0.05
+limma_volcano_highlight <- function(gtable, outfile = "", title = "", gs = c(), p_cutoff = 0.05, fc_cutoff = 1.0, labp = 0.05) {
+
+  gtable$highlight <- gtable$gene %in% gs # Sometimes this is gtable$symbol. Depends on preprocessing
+  gtable <- gtable[order(gtable$highlight), ]
+
+  ixes <- c(1)
+  if (length(gs) == 0) {
+    ixes <-  which(gtable$adj.P.Val <= p_cutoff)
+  } else {
+    # ixes <- which(gtable$adj.P.Val <= labp & gtable$mgi_symbol %in% gs)
+    ixes <- which(gtable$gene %in% gs) # this version labels your supplied gene names regardless of significance
+  }
+  if (length(ixes) > 80) {
+    ixes <- ixes[1:80]
+  }
+  png(outfile, res = 300, height = 5.5, width = 10, unit = "in")
+  p <- ggplot(data = gtable, aes(x = logFC, y = -log10(adj.P.Val), color = highlight)) +
+    geom_point(size = 1.5, shape = 19) + scale_color_manual(values = c("FALSE" = "grey", "TRUE" = "red")) +
+    theme(legend.position = "none") + labs(x = "logFC", y = "-log10 FDR", title = title) +
+    geom_hline(yintercept = -log10(p_cutoff), color = "black", linetype = "dotted", size = 1.0) +
+    geom_vline(xintercept = -fc_cutoff, color = "black", linetype = "dotted", size = 1.0) +
+    geom_vline(xintercept = fc_cutoff, color = "black", linetype = "dotted", size = 1.0) +
+    theme(text = element_text(size = 16))
+  if (length(ixes) > 0) {
+    p <- p + geom_text_repel(data = gtable[ixes, ], aes(logFC, -log10(adj.P.Val), fontface = "bold", label = gene), size = 4, color = "black")
+  }
+  print(p)
+  dev.off()
+  return(p)
+}
+```
+
+```{r DE_stimulationTreatment_volcano_plots}
+p_cutoff <- 0.05
+logFCCutoff <- 1
+png_res <- 600
+
+# Get the names of the gseas fields
+comparison_fields <- names(comparisons)
+
+contrast_map <- list(
+  Th17VsNaive = "All Th17 - Naive",
+  HarVsNaive = "All Th17 with Harmine - Naive",
+  NoHarVsNaive = "All Th17, no Harmine - Naive",
+  HarVsNoHar5h = "Harmine - No Harmine, 5h",
+  HarVsNoHar24h = "Harmine - No Harmine, 24h",
+  HarVsNoHar48h = "Harmine - No Harmine, 48h",
+  HarVsNoHar96h = "Harmine - No Harmine, 96h",
+  Har5hVsNaive = "Th17 with Harmine - Naive, 5h",
+  Har24hVsNaive = "Th17 with Harmine - Naive, 24h",
+  Har48hVsNaive = "Th17 with Harmine - Naive, 48h",
+  Har96hVsNaive = "Th17 with Harmine - Naive, 96h",
+  NoHar5hVsNaive = "Th17, no Harmine - Naive, 5h",
+  NoHar24hVsNaive = "Th17, no Harmine - Naive, 24h",
+  NoHar48hVsNaive = "Th17, no Harmine - Naive, 48h",
+  NoHar96hVsNaive = "Th17, no Harmine - Naive, 96h"
+)
+# Loop over the gsea fields
+for (field in comparison_fields) {
+  # Create the strings for the plot
+  # Get the corresponding comparisonString from contrast_map
+  comparisonString <- contrast_map[[field]]
+  titleString <- paste0(comparisonString, " ", "\nDifferential Gene Expression")
+
+  # Generate the plot
+  gtable <- comparisons[[field]]
+  outfile_png <- paste0(dirPlots, "/", dataDate, "_", "DGE_", field, ".png")
+  outfile_pdf <- paste0(dirPlots, "/", dataDate, "_", "DGE_", field, ".pdf")
+
+  # Split the comparisonString on " - " and prepend "Up at " to each part
+  # Reverse the labels to match the colors correctly
+  legend_labels <- rev(paste("Up in", strsplit(comparisonString, " - ")[[1]]))
+
+  png(outfile_png,
+    width = 6, height = 5.5, units = "in", res = png_res)
+  p.tmp <- ggplot(data = gtable, aes(x = logFC, y = -log10(adj.P.Val), color = logFC > 0)) +
+    geom_point(size = 1.5, shape = 19) +
+    scale_color_manual(values = c("#6565ff", "#ff5a5a"), labels = legend_labels) +
+    labs(color = "diff. direction") + # Change the legend title
+    theme(legend.position = "bottom") + xlab("logFC") + ylab("-log10 FDR") +
+    geom_hline(yintercept = -log10(p_cutoff), color = "black", linetype = "dotted", size = 1.0) +
+    geom_vline(xintercept = -logFCCutoff, color = "black", linetype = "dotted", size = 1.0) +
+    geom_vline(xintercept = logFCCutoff, color = "black", linetype = "dotted", size = 1.0) +
+    theme(text = element_text(size = 16)) +
+    # geom_text_repel(data = gtable[1:25, ],
+    #   aes(logFC, -log10(adj.P.Val), fontface = "bold", label = gene),
+    #   size = 4,
+    #   color = "black",
+    #   max.overlaps = 100) +
+    ggtitle(titleString)
+
+  print(p.tmp)
+  dev.off()
+
+  # Create the PDF version
+  pdf(outfile_pdf, width = 6, height = 5.5)
+  print(p.tmp)
+  dev.off()
+
+  rm_tmp(ask = FALSE)
+}
+```
+
+```{r DgeVennDiagrams}
+p_cutoff <- 0.05
+png_res <- 600
+
+# Get the names of the gseas fields
+comparison_fields <- names(comparisons)
+
+contrast_map <- list(
+  Th17VsNaive = "All Th17 - Naive",
+  HarVsNaive = "All Th17 with Harmine - Naive",
+  NoHarVsNaive = "All Th17, no Harmine - Naive",
+  HarVsNoHar5h = "Harmine - No Harmine, 5h",
+  HarVsNoHar24h = "Harmine - No Harmine, 24h",
+  HarVsNoHar48h = "Harmine - No Harmine, 48h",
+  HarVsNoHar96h = "Harmine - No Harmine, 96h",
+  Har5hVsNaive = "Th17 with Harmine - Naive, 5h",
+  Har24hVsNaive = "Th17 with Harmine - Naive, 24h",
+  Har48hVsNaive = "Th17 with Harmine - Naive, 48h",
+  Har96hVsNaive = "Th17 with Harmine - Naive, 96h",
+  NoHar5hVsNaive = "Th17, no Harmine - Naive, 5h",
+  NoHar24hVsNaive = "Th17, no Harmine - Naive, 24h",
+  NoHar48hVsNaive = "Th17, no Harmine - Naive, 48h",
+  NoHar96hVsNaive = "Th17, no Harmine - Naive, 96h"
+)
+
+# HarVsNaive vs NoHarVsnaive Venn Diagram
+# vennDiagSaveDeg <- function(comparisonField1,comparisonField2,) {
+DEG_HarVsNaive.tmp <- HarVsNaive$gene[HarVsNaive$adj.P.Val < 0.05 & abs(HarVsNaive$logFC) > 1]
+DEG_NoHarVsNaive.tmp <- NoHarVsNaive$gene[NoHarVsNaive$adj.P.Val < 0.05 & abs(NoHarVsNaive$logFC) > 1]
+
+venn_data.tmp <- list("HarVsNaive" = DEG_HarVsNaive.tmp, "NoHarVsNaive" = DEG_NoHarVsNaive.tmp)
+
+# use venn() from gplots to be able to get the intersection lists
+venn_result.tmp <- venn(venn_data.tmp)
+
+# retrieve the lists, combine them into a dataframe, save to csv
+HarVsNaive_unique <- attr(venn_result.tmp, "intersections")$`HarVsNaive`
+NoHarVsNaive_unique <- attr(venn_result.tmp, "intersections")$`NoHarVsNaive`
+HarVsNaive_NoHarVsNaive_intersection <- attr(venn_result.tmp, "intersections")$`HarVsNaive:NoHarVsNaive`
+
+# Find the length of the longest list
+max_length <- max(length(HarVsNaive_unique), length(NoHarVsNaive_unique), length(HarVsNaive_NoHarVsNaive_intersection))
+
+# Pad the lists with NA values to make them the same length
+HarVsNaive_unique <- c(HarVsNaive_unique, rep(NA, max_length - length(HarVsNaive_unique)))
+NoHarVsNaive_unique <- c(NoHarVsNaive_unique, rep(NA, max_length - length(NoHarVsNaive_unique)))
+HarVsNaive_NoHarVsNaive_intersection <- c(HarVsNaive_NoHarVsNaive_intersection, rep(NA, max_length - length(HarVsNaive_NoHarVsNaive_intersection)))
+
+# create the dataframe
+intersection_df.tmp <- data.frame(
+  HarVsNaive_unique = HarVsNaive_unique,
+  NoHarVsNaive_unique = NoHarVsNaive_unique,
+  HarVsNaive_NoHarVsNaive_intersection = HarVsNaive_NoHarVsNaive_intersection
+)
+
+# Save the dataframe to a CSV file
+write.csv(intersection_df.tmp, file = paste0(dataDirOutput, "/HarVsNaive_NoHarVsNaive_intersections.csv"))
+
+venn_plot.tmp <- ggvenn(venn_data.tmp)
+
+png(filename =
+  file.path(dirRoot,
+    dirPlots,
+    paste0("HarVsNaive_v_NoHarVsNaive_Venn", filenameSuffix, ".png")),
+width = 6, height = 5,
+units = "in",
+res = 600)
+
+print(venn_plot.tmp)
+
+dev.off()
+rm_tmp(ask = FALSE)
+
+
+# }
+
+
+# Har5hVsNaive vs NoHar5hVsNaive Venn Diagram
+DEG_Har5hVsNaive.tmp <- Har5hVsNaive$gene[Har5hVsNaive$adj.P.Val < 0.05 & abs(Har5hVsNaive$logFC) > 1]
+DEG_NoHar5hVsNaive.tmp <- NoHar5hVsNaive$gene[NoHar5hVsNaive$adj.P.Val < 0.05 & abs(NoHar5hVsNaive$logFC) > 1]
+
+venn_data.tmp <- list("HarVsNaive, 5h" = DEG_Har5hVsNaive.tmp, "NoHarVsNaive, 5h" = DEG_NoHar5hVsNaive.tmp)
+
+# use venn() from gplots to be able to get the intersection lists
+venn_result.tmp <- venn(venn_data.tmp)
+
+# retrieve the lists, combine them into a dataframe, save to csv
+Har5hVsNaive_unique <- attr(venn_result.tmp, "intersections")$`HarVsNaive, 5h`
+NoHar5hVsNaive_unique <- attr(venn_result.tmp, "intersections")$`NoHarVsNaive, 5h`
+Har5hVsNaive_NoHar5hVsNaive_intersection <- attr(venn_result.tmp, "intersections")$`HarVsNaive, 5h:NoHarVsNaive, 5h`
+
+# Find the length of the longest list
+max_length <- max(length(Har5hVsNaive_unique), length(NoHar5hVsNaive_unique), length(Har5hVsNaive_NoHar5hVsNaive_intersection))
+
+# Pad the lists with NA values to make them the same length
+Har5hVsNaive_unique <- c(Har5hVsNaive_unique, rep(NA, max_length - length(Har5hVsNaive_unique)))
+NoHar5hVsNaive_unique <- c(NoHar5hVsNaive_unique, rep(NA, max_length - length(NoHar5hVsNaive_unique)))
+Har5hVsNaive_NoHar5hVsNaive_intersection <- c(Har5hVsNaive_NoHar5hVsNaive_intersection, rep(NA, max_length - length(Har5hVsNaive_NoHar5hVsNaive_intersection)))
+
+# Now you can create the dataframe
+intersection_df.tmp <- data.frame(
+  Har5hVsNaive_unique = Har5hVsNaive_unique,
+  NoHar5hVsNaive_unique = NoHar5hVsNaive_unique,
+  Har5hVsNaive_NoHar5hVsNaive_intersection = Har5hVsNaive_NoHar5hVsNaive_intersection
+)
+
+# Save the dataframe to a CSV file
+write.csv(intersection_df.tmp, file = paste0(dataDirOutput, "/Har5hVsNaive_NoHar5hVsNaive_intersections.csv"))
+
+venn_plot.tmp <- ggvenn(venn_data.tmp)
+
+png(filename =
+  file.path(dirRoot,
+    dirPlots,
+    paste0("Har5hVsNaive_v_NoHar5hVsNaive_Venn", filenameSuffix, ".png")),
+width = 6, height = 5,
+units = "in",
+res = 600)
+
+print(venn_plot.tmp)
+
+dev.off()
+rm_tmp(ask = FALSE)
+
+# Har24hVsNaive vs NoHar24hVsNaive Venn Diagram
+DEG_Har24hVsNaive.tmp <- Har24hVsNaive$gene[Har24hVsNaive$adj.P.Val < 0.05 & abs(Har24hVsNaive$logFC) > 1]
+DEG_NoHar24hVsNaive.tmp <- NoHar24hVsNaive$gene[NoHar24hVsNaive$adj.P.Val < 0.05 & abs(NoHar24hVsNaive$logFC) > 1]
+
+venn_data.tmp <- list("HarVsNaive, 24h" = DEG_Har24hVsNaive.tmp, "NoHarVsNaive, 24h" = DEG_NoHar24hVsNaive.tmp)
+
+# use venn() from gplots to be able to get the intersection lists
+venn_result.tmp <- venn(venn_data.tmp)
+
+# retrieve the lists, combine them into a dataframe, save to csv
+Har24hVsNaive_unique <- attr(venn_result.tmp, "intersections")$`HarVsNaive, 24h`
+NoHar24hVsNaive_unique <- attr(venn_result.tmp, "intersections")$`NoHarVsNaive, 24h`
+Har24hVsNaive_NoHar24hVsNaive_intersection <- attr(venn_result.tmp, "intersections")$`HarVsNaive, 24h:NoHarVsNaive, 24h`
+
+# Find the length of the longest list
+max_length <- max(length(Har24hVsNaive_unique), length(NoHar24hVsNaive_unique), length(Har24hVsNaive_NoHar24hVsNaive_intersection))
+
+# Pad the lists with NA values to make them the same length
+Har24hVsNaive_unique <- c(Har24hVsNaive_unique, rep(NA, max_length - length(Har24hVsNaive_unique)))
+NoHar24hVsNaive_unique <- c(NoHar24hVsNaive_unique, rep(NA, max_length - length(NoHar24hVsNaive_unique)))
+Har24hVsNaive_NoHar24hVsNaive_intersection <- c(Har24hVsNaive_NoHar24hVsNaive_intersection, rep(NA, max_length - length(Har24hVsNaive_NoHar24hVsNaive_intersection)))
+
+# Now you can create the dataframe
+intersection_df.tmp <- data.frame(
+  Har24hVsNaive_unique = Har24hVsNaive_unique,
+  NoHar24hVsNaive_unique = NoHar24hVsNaive_unique,
+  Har24hVsNaive_NoHar24hVsNaive_intersection = Har24hVsNaive_NoHar24hVsNaive_intersection
+)
+
+# Save the dataframe to a CSV file
+write.csv(intersection_df.tmp, file = paste0(dataDirOutput, "/Har24hVsNaive_NoHar24hVsNaive_intersections.csv"))
+
+venn_plot.tmp <- ggvenn(venn_data.tmp)
+
+png(filename =
+  file.path(dirRoot,
+    dirPlots,
+    paste0("Har24hVsNaive_v_NoHar24hVsNaive_Venn", filenameSuffix, ".png")),
+width = 6, height = 5,
+units = "in",
+res = 600)
+
+print(venn_plot.tmp)
+
+dev.off()
+rm_tmp(ask = FALSE)
+
+# Har48hVsNaive vs NoHar48hVsNaive Venn Diagram
+DEG_Har48hVsNaive.tmp <- Har48hVsNaive$gene[Har48hVsNaive$adj.P.Val < 0.05 & abs(Har48hVsNaive$logFC) > 1]
+DEG_NoHar48hVsNaive.tmp <- NoHar48hVsNaive$gene[NoHar48hVsNaive$adj.P.Val < 0.05 & abs(NoHar48hVsNaive$logFC) > 1]
+
+venn_data.tmp <- list("HarVsNaive, 48h" = DEG_Har48hVsNaive.tmp, "NoHarVsNaive, 48h" = DEG_NoHar48hVsNaive.tmp)
+
+# use venn() from gplots to be able to get the intersection lists
+venn_result.tmp <- venn(venn_data.tmp)
+
+# retrieve the lists, combine them into a dataframe, save to csv
+Har48hVsNaive_unique <- attr(venn_result.tmp, "intersections")$`HarVsNaive, 48h`
+NoHar48hVsNaive_unique <- attr(venn_result.tmp, "intersections")$`NoHarVsNaive, 48h`
+Har48hVsNaive_NoHar48hVsNaive_intersection <- attr(venn_result.tmp, "intersections")$`HarVsNaive, 48h:NoHarVsNaive, 48h`
+
+# Find the length of the longest list
+max_length <- max(length(Har48hVsNaive_unique), length(NoHar48hVsNaive_unique), length(Har48hVsNaive_NoHar48hVsNaive_intersection))
+
+# Pad the lists with NA values to make them the same length
+Har48hVsNaive_unique <- c(Har48hVsNaive_unique, rep(NA, max_length - length(Har48hVsNaive_unique)))
+NoHar48hVsNaive_unique <- c(NoHar48hVsNaive_unique, rep(NA, max_length - length(NoHar48hVsNaive_unique)))
+Har48hVsNaive_NoHar48hVsNaive_intersection <- c(Har48hVsNaive_NoHar48hVsNaive_intersection, rep(NA, max_length - length(Har48hVsNaive_NoHar48hVsNaive_intersection)))
+
+# Now you can create the dataframe
+intersection_df.tmp <- data.frame(
+  Har48hVsNaive_unique = Har48hVsNaive_unique,
+  NoHar48hVsNaive_unique = NoHar48hVsNaive_unique,
+  Har48hVsNaive_NoHar48hVsNaive_intersection = Har48hVsNaive_NoHar48hVsNaive_intersection
+)
+
+# Save the dataframe to a CSV file
+write.csv(intersection_df.tmp, file = paste0(dataDirOutput, "/Har48hVsNaive_NoHar48hVsNaive_intersections.csv"))
+
+venn_plot.tmp <- ggvenn(venn_data.tmp)
+
+png(filename =
+  file.path(dirRoot,
+    dirPlots,
+    paste0("Har48hVsNaive_v_NoHar48hVsNaive_Venn", filenameSuffix, ".png")),
+width = 6, height = 5,
+units = "in",
+res = 600)
+
+print(venn_plot.tmp)
+
+dev.off()
+rm_tmp(ask = FALSE)
+
+DEG_Har96hVsNaive.tmp <- Har96hVsNaive$gene[Har96hVsNaive$adj.P.Val < 0.05 & abs(Har96hVsNaive$logFC) > 1]
+DEG_NoHar96hVsNaive.tmp <- NoHar96hVsNaive$gene[NoHar96hVsNaive$adj.P.Val < 0.05 & abs(NoHar96hVsNaive$logFC) > 1]
+
+venn_data.tmp <- list("HarVsNaive, 96h" = DEG_Har96hVsNaive.tmp, "NoHarVsNaive, 96h" = DEG_NoHar96hVsNaive.tmp)
+
+# use venn() from gplots to be able to get the intersection lists
+venn_result.tmp <- venn(venn_data.tmp)
+
+# retrieve the lists, combine them into a dataframe, save to csv
+Har96hVsNaive_unique <- attr(venn_result.tmp, "intersections")$`HarVsNaive, 96h`
+NoHar96hVsNaive_unique <- attr(venn_result.tmp, "intersections")$`NoHarVsNaive, 96h`
+Har96hVsNaive_NoHar96hVsNaive_intersection <- attr(venn_result.tmp, "intersections")$`HarVsNaive, 96h:NoHarVsNaive, 96h`
+
+# Find the length of the longest list
+max_length <- max(length(Har96hVsNaive_unique), length(NoHar96hVsNaive_unique), length(Har96hVsNaive_NoHar96hVsNaive_intersection))
+
+# Pad the lists with NA values to make them the same length
+Har96hVsNaive_unique <- c(Har96hVsNaive_unique, rep(NA, max_length - length(Har96hVsNaive_unique)))
+NoHar96hVsNaive_unique <- c(NoHar96hVsNaive_unique, rep(NA, max_length - length(NoHar96hVsNaive_unique)))
+Har96hVsNaive_NoHar96hVsNaive_intersection <- c(Har96hVsNaive_NoHar96hVsNaive_intersection, rep(NA, max_length - length(Har96hVsNaive_NoHar96hVsNaive_intersection)))
+
+# Now you can create the dataframe
+intersection_df.tmp <- data.frame(
+  Har96hVsNaive_unique = Har96hVsNaive_unique,
+  NoHar96hVsNaive_unique = NoHar96hVsNaive_unique,
+  Har96hVsNaive_NoHar96hVsNaive_intersection = Har96hVsNaive_NoHar96hVsNaive_intersection
+)
+
+# Save the dataframe to a CSV file
+write.csv(intersection_df.tmp, file = paste0(dataDirOutput, "/Har96hVsNaive_NoHar96hVsNaive_intersections.csv"))
+
+venn_plot.tmp <- ggvenn(venn_data.tmp)
+
+png(filename =
+  file.path(dirRoot,
+    dirPlots,
+    paste0("Har96hVsNaive_v_NoHar96hVsNaive_Venn", filenameSuffix, ".png")),
+width = 6, height = 5,
+units = "in",
+res = 600)
+
+print(venn_plot.tmp)
+
+dev.off()
+rm_tmp(ask = FALSE)
+
+
+# HarVsNoHar5h vs Th17VsNaive
+DEG_HarVsNoHar5h.tmp <- HarVsNoHar5h$gene[HarVsNoHar5h$adj.P.Val < 0.05 & abs(HarVsNoHar5h$logFC) > 1]
+DEG_Th17VsNaive.tmp <- Th17VsNaive$gene[Th17VsNaive$adj.P.Val < 0.05 & abs(Th17VsNaive$logFC) > 1]
+
+venn_data.tmp <- list("HarVsNoHar5h" = DEG_HarVsNoHar5h.tmp, "Th17VsNaive" = DEG_Th17VsNaive.tmp)
+
+# use venn() from gplots to be able to get the intersection lists
+venn_result.tmp <- venn(venn_data.tmp)
+
+# retrieve the lists, combine them into a dataframe, save to csv
+HarVsNoHar5h_unique <- attr(venn_result.tmp, "intersections")$`HarVsNoHar5h`
+Th17VsNaive_unique <- attr(venn_result.tmp, "intersections")$`Th17VsNaive`
+HarVsNoHar5h_Th17VsNaive_intersection <- attr(venn_result.tmp, "intersections")$`HarVsNoHar5h:Th17VsNaive`
+
+# Find the length of the longest list
+max_length <- max(length(HarVsNoHar5h_unique), length(Th17VsNaive_unique), length(HarVsNoHar5h_Th17VsNaive_intersection))
+
+# Pad the lists with NA values to make them the same length
+HarVsNoHar5h_unique <- c(HarVsNoHar5h_unique, rep(NA, max_length - length(HarVsNoHar5h_unique)))
+Th17VsNaive_unique <- c(Th17VsNaive_unique, rep(NA, max_length - length(Th17VsNaive_unique)))
+HarVsNoHar5h_Th17VsNaive_intersection <- c(HarVsNoHar5h_Th17VsNaive_intersection, rep(NA, max_length - length(HarVsNoHar5h_Th17VsNaive_intersection)))
+
+# Now you can create the dataframe
+intersection_df.tmp <- data.frame(
+  HarVsNoHar5h_unique = HarVsNoHar5h_unique,
+  Th17VsNaive_unique = Th17VsNaive_unique,
+  HarVsNoHar5h_Th17VsNaive_intersection = HarVsNoHar5h_Th17VsNaive_intersection
+)
+
+# Save the dataframe to a CSV file
+write.csv(intersection_df.tmp, file = paste0(dataDirOutput, "/HarVsNoHar5h_Th17VsNaive_intersections.csv"))
+
+venn_plot.tmp <- ggvenn(venn_data.tmp)
+
+png(filename =
+  file.path(dirRoot,
+    dirPlots,
+    paste0("HarVsNoHar5h_v_Th17VsNaive_Venn", filenameSuffix, ".png")),
+width = 6, height = 5,
+units = "in",
+res = 600)
+
+print(venn_plot.tmp)
+
+dev.off()
+rm_tmp(ask = FALSE)
+
+# new dataframe for 'counter-regulated' genes in the HarVsNoHar5h_Th17VsNaive_intersection
+# contains logFC, adj.P.Val, gene from both DEG_HarVsNoHar5h.tmp and DEG_Th17VsNaive.tmp
+# also contains the mean adj.P.Val for each gene (mean of this value from HarVsNoHar5h and Th17VsNaive)
+# also contains logFCDistance which is the abs(logFC1 - logFC2)
+# filter to contain only those genes where logFCDistance > 1.5 OR logFC1 and logFC2 have a different sign
+# Select the columns to merge
+HarVsNoHar5h_selected.tmp <- HarVsNoHar5h %>% dplyr::select(gene, logFC = logFC, adj.P.Val = adj.P.Val)
+Th17VsNaive_selected.tmp <- Th17VsNaive %>% dplyr::select(gene, logFC = logFC, adj.P.Val = adj.P.Val)
+
+# Merge the selected columns
+merged_df.tmp <- merge(HarVsNoHar5h_selected.tmp, Th17VsNaive_selected.tmp, by = "gene", suffixes = c("1", "2"))
+
+# Filter the merged data frame to only those genes in the intersection
+merged_df.tmp <- merged_df.tmp %>%
+  filter(gene %in% HarVsNoHar5h_Th17VsNaive_intersection)
+
+# Calculate the mean adj.P.Val and logFCDistance
+merged_df.tmp <- merged_df.tmp %>%
+  mutate(mean_adj.P.Val = (adj.P.Val1 + adj.P.Val2) / 2,
+    logFCDistance = abs(logFC1 - logFC2))
+
+# Filter the dataframe
+Th17VsNaive_HarVsNoHar5h_intersection_counterregulated <- merged_df.tmp %>%
+  filter(((adj.P.Val1 < 0.05 & abs(logFC1) > 1) & (adj.P.Val2 < 0.05 & abs(logFC2) > 1)) & (logFCDistance > 1.5 | (sign(logFC1) != sign(logFC2))))
+
+# Save the dataframe to a CSV file
+write.csv(Th17VsNaive_HarVsNoHar5h_intersection_counterregulated, file = paste0(dataDirOutput, "/Th17VsNaive_HarVsNoHar5h_intersection_counterregulated.csv"))
+
+rm_tmp(ask = FALSE)
+
+# counter-regulated genes for NoHarVsNaive5h / HarVsNoHar5h--------------------------------------------
+
+# HarVsNoHar5h vs NoHar5hVsNaive Venn Diagram
+DEG_HarVsNoHar5h.tmp <- HarVsNoHar5h$gene[HarVsNoHar5h$adj.P.Val < 0.05 & abs(HarVsNoHar5h$logFC) > 1]
+DEG_NoHar5hVsNaive.tmp <- NoHar5hVsNaive$gene[NoHar5hVsNaive$adj.P.Val < 0.05 & abs(NoHar5hVsNaive$logFC) > 1]
+
+venn_data.tmp <- list("HarVsNoHar5h" = DEG_HarVsNoHar5h.tmp, "NoHarVsNaive, 5h" = DEG_NoHar5hVsNaive.tmp)
+
+# use venn() from gplots to be able to get the intersection lists
+venn_result.tmp <- venn(venn_data.tmp)
+
+# retrieve the lists, combine them into a dataframe, save to csv
+HarVsNoHar5h_unique <- attr(venn_result.tmp, "intersections")$`HarVsNoHar5h`
+NoHar5hVsNaive_unique <- attr(venn_result.tmp, "intersections")$`NoHarVsNaive, 5h`
+HarVsNoHar5h_NoHar5hVsNaive_intersection <- attr(venn_result.tmp, "intersections")$`HarVsNoHar5h:NoHarVsNaive, 5h`
+
+# Find the length of the longest list
+max_length <- max(length(HarVsNoHar5h_unique), length(NoHar5hVsNaive_unique), length(HarVsNoHar5h_NoHar5hVsNaive_intersection))
+
+# Pad the lists with NA values to make them the same length
+HarVsNoHar5h_unique <- c(HarVsNoHar5h_unique, rep(NA, max_length - length(HarVsNoHar5h_unique)))
+NoHar5hVsNaive_unique <- c(NoHar5hVsNaive_unique, rep(NA, max_length - length(NoHar5hVsNaive_unique)))
+HarVsNoHar5h_NoHar5hVsNaive_intersection <- c(HarVsNoHar5h_NoHar5hVsNaive_intersection, rep(NA, max_length - length(HarVsNoHar5h_NoHar5hVsNaive_intersection)))
+
+# Now you can create the dataframe
+intersection_df.tmp <- data.frame(
+  HarVsNoHar5h_unique = HarVsNoHar5h_unique,
+  NoHar5hVsNaive_unique = NoHar5hVsNaive_unique,
+  HarVsNoHar5h_NoHar5hVsNaive_intersection = HarVsNoHar5h_NoHar5hVsNaive_intersection
+)
+
+write.csv(intersection_df.tmp, file = paste0(dataDirOutput, "/NoHar5hVsNaive_HarVsNoHar5h_intersections.csv"))
+
+HarVsNoHar5h_selected.tmp <- HarVsNoHar5h %>% dplyr::select(gene, logFC = logFC, adj.P.Val = adj.P.Val)
+NoHar5hVsNaive_selected.tmp <- NoHar5hVsNaive %>% dplyr::select(gene, logFC = logFC, adj.P.Val = adj.P.Val)
+
+# Merge the selected columns
+merged_df.tmp <- merge(HarVsNoHar5h_selected.tmp, NoHar5hVsNaive_selected.tmp, by = "gene", suffixes = c("1", "2"))
+
+# Filter the merged data frame to only those genes in the intersection
+merged_df.tmp <- merged_df.tmp %>%
+  filter(gene %in% HarVsNoHar5h_NoHar5hVsNaive_intersection)
+
+# Calculate the mean adj.P.Val and logFCDistance
+merged_df.tmp <- merged_df.tmp %>%
+  mutate(mean_adj.P.Val = (adj.P.Val1 + adj.P.Val2) / 2,
+    logFCDistance = abs(logFC1 - logFC2))
+
+# Filter the dataframe
+NoHar5hVsNaive_HarVsNoHar5h_intersection_counterregulated <- merged_df.tmp %>%
+  filter(((adj.P.Val1 < 0.05 & abs(logFC1) > 1) & (adj.P.Val2 < 0.05 & abs(logFC2) > 1)) & (logFCDistance > 1.5 | (sign(logFC1) != sign(logFC2))))
+
+# Save the dataframe to a CSV file
+write.csv(NoHar5hVsNaive_HarVsNoHar5h_intersection_counterregulated, file = paste0(dataDirOutput, "/NoHar5hVsNaive_HarVsNoHar5h_intersection_counterregulated.csv"))
+
+rm_tmp(ask = FALSE)
+```
+
+```{r clusterProfiler}
+# load in human-to-mouse translated gene sets
+mouseGeneSets <- readRDS(file = paste0(dataDirOutput, "/geneSetsHumanToMouseConverted.Rds"))
+
+# Access the data frames
+c7 <- mouseGeneSets$c7
+c7Tcell <- mouseGeneSets$c7Tcell
+hallmark <- mouseGeneSets$hallmark
+
+# Load the necessary library
+library(clusterProfiler)
+organism <- "org.Dm.eg.db"
+BiocManager::install(organism, character.only = TRUE)
+library(organism, character.only = TRUE)
+
+# make a shorter varname for the counter-reg genes
+counterRegGenes <- NoHar5hVsNaive_HarVsNoHar5h_intersection_counterregulated
+
+# sort counterRegGenes by $mean_adj.P.Val, smallest to largest
+# counterRegGenes <- counterRegGenes[order(counterRegGenes$mean_adj.P.Val, decreasing = TRUE), ]
+counterRegGenes <- counterRegGenes[order(counterRegGenes$logFCDistance, decreasing = TRUE), ]
+
+# make a gene vector in the form that gseGO will take...
+gene_vector <- setNames(object = counterRegGenes$mean_adj.P.Val,
+  nm = counterRegGenes$gene)
+
+gene_vector <- setNames(object = counterRegGenes$logFCDistance,
+  nm = counterRegGenes$gene)
+
+gene_vector_entrez <- gene_vector
+entrezidsymbols <- mapIds(org.Mm.eg.db, keys = names(gene_vector), keytype = "SYMBOL", column = "ENTREZID") %>% as.data.frame(.)
+names(gene_vector_entrez) <- entrezidsymbols$.
+gene_vector_entrez <- gene_vector_entrez[!is.na(names(gene_vector_entrez))]
+
+# Suppose your gene_vector contains ENSEMBL gene IDs and you want to convert them to SYMBOLs
+converted_genes <- bitr(gene_vector, fromType = "ENSEMBL", toType = "SYMBOL", OrgDb = organism)
+
+
+# Print the first few rows of the converted genes
+head(converted_genes)
+
+# set organism
+# organism <- "BSgenome.Mmusculus.UCSC.mm10"
+# BiocManager::install(organism, character.only = TRUE)
+# library(organism, character.only = TRUE)
+
+ego <- gseGO(gene = gene_vector,
+  ont = "ALL",
+  keyType = "SYMBOL",
+  minGSSize = 3,
+  maxGSSize = 10000,
+  pvalueCutoff = 1,
+  verbose = TRUE,
+  OrgDb = organism,
+  pAdjustMethod = "none",
+  scoreType = "pos")
+
+enrichedGO <- enrichGO(gene = gene_vector_entrez,
+  OrgDb = organism,
+  keyType = "ENTREZID",
+  ont = "ALL",
+  pAdjustMethod = "BH",
+  pvalueCutoff = 0.1,  # Increase from 0.05 to 0.1
+  qvalueCutoff = 0.3,  # Increase from 0.2 to 0.3
+  readable = TRUE)
+
+
+counterRegGSEA <- GSEA(
+  geneList = gene_vector,
+  exponent = 1,
+  minGSSize = 10,
+  maxGSSize = 10000,
+  eps = 1e-10,
+  pvalueCutoff = 1,
+  pAdjustMethod = "none",
+  gson = NULL,
+  verbose = TRUE,
+  TERM2GENE = hallmark,
+  scoreType = "pos"
+)
+
+outfile_png <- paste0(dirPlots, "/", dataDate, "_", "gseGO_dotplot_counterregGenes", ".png")
+outfile_pdf <- paste0(dirPlots, "/", dataDate, "_", "gseGO_dotplot_counterregGenes", ".pdf")
+
+# Create the dotplot
+dotplot_obj <- dotplot(ego)
+
+# Save the plot as a PNG
+png(outfile_png, width = 6, height = 5.5, units = "in", res = 600)
+print(dotplot_obj)
+dev.off()
+
+# Save the plot as a PDF
+pdf(outfile_pdf, width = 6, height = 5.5)
+print(dotplot_obj)
+dev.off()
+
+# alright let's try enrichR
+library(enrichR)
+
+# Perform enrichment analysis using the GO_Biological_Process_2018 database
+results <- enrichR::enrichr(gene = gene_vector, database = "GO_Biological_Process_2023")
+
+# Print the first few rows of the results
+head(results$GO_Biological_Process_2023)
+
+# try fgsea()
+fgsea_counterRegOutput <- fgsea(pathways = hallmark,
+  stats = gene_vector,
+  minSize = 15,
+  maxSize = 500,
+  scoreType = "pos")
+
+
+# try gseKEGG
+gseKEGG_counterRegOutput <- gseKEGG(gene = gene_vector_entrez,
+  organism = "mmu",
+  keyType = "kegg",  # Change "SYMBOL" to "kegg"
+  exponent = 1,
+  verbose = TRUE,
+  scoreType = "pos")
+
+
+dotplot(gseKEGG_counterRegOutput)
+```
+
+```{r MSigDB_output_workaround}
+# nothing in R seems to reproduce MSigDB GSEA results, so we'll load in the output.tsv and try from there....
+
+# load MSigDB GSEA output.tsv
+MSigDBResult <- read_csv(paste0(dataDirSaved, "/MSigDB-GSEA_output_counterRegGenes_subset.csv"))
+
+# for dotplot, we will need genRatio, p.adjust, counts?, module name
+# Convert the columns to the correct data types
+MSigDBResult$k_div_K <- as.numeric(MSigDBResult$k_div_K)
+MSigDBResult$p_value <- as.numeric(MSigDBResult$p_value)
+MSigDBResult$NumGenesinOverlap_k <- as.numeric(MSigDBResult$NumGenesinOverlap_k)
+
+# Sort the data frame by k_div_K
+MSigDBResult <- MSigDBResult[order(MSigDBResult$k_div_K), ]
+
+outfile_png <- paste0(dirPlots, "/", dataDate, "_", "MSigDB_dotplot_counterregGenes", ".png")
+outfile_pdf <- paste0(dirPlots, "/", dataDate, "_", "MSigDB_dotplot_counterregGenes", ".pdf")
+
+# Create a new column for the transformed p-values
+MSigDBResult$log_p_value <- -log10(MSigDBResult$p_value)
+
+dotPlot.tmp <- ggplot(MSigDBResult, aes(x = k_div_K, y = reorder(GeneSetName, k_div_K), size = NumGenesinOverlap_k, color = log_p_value)) +
+  geom_point() +
+  scale_size_area(max_size = 7) +  # Use scale_size_area
+  scale_color_gradient(low = "blue", high = "red", breaks = c(8, 6, 4, 2)) +  # Set the breaks to 8, 6, 4, 2
+  theme_minimal() +
+  labs(title = "MSigDB GSEA",
+    x = "Gene Ratio",
+    y = "Gene Set Name",
+    color = expression(-log[10]("p-value")),  # Use expression() to create the subscript
+    size = "Overlap Count") +
+  guides(color = guide_colorbar(nbin = 4))  # Set the number of bins to 4
+
+# Save the plot as a PNG
+png(outfile_png, width = 7, height = 5.5, units = "in", res = 600)
+print(dotPlot.tmp)
+dev.off()
+
+# Save the plot as a PDF
+pdf(outfile_pdf, width = 7, height = 5.5)
+print(dotPlot.tmp)
+dev.off()
+
+rm_tmp(ask = FALSE)
+```
+
+```{r GSEA_labeled_volcano_plots_hallmark_mouse}
+# choose the gseas object
+gseas <- gseasHallmark
+
+# Get the names of the gseas fields
+gsea_fields <- names(gseas)
+
+# specify the geneModules
+geneModules <- hallmarkGeneListsMouse
+
+# Split the gsea_fields strings at the blank space and retrieve the part after the blank space
+comparisonString <- sapply(gsea_fields, function(field) {
+  parts <- strsplit(field, " ")[[1]]
+  if (length(parts) > 1) {
+    return(parts[2])
+  } else {
+    return(NA)
+  }
+})
+
+# contrast_map <- list(
+#   Th17VsNaive = "All Th17 - Naive",
+#   HarVsNaive = "All Th17 with Harmine - Naive",
+#   NoHarVsNaive = "All Th17, no Harmine - Naive",
+#   HarVsNoHar5h = "Harmine - No Harmine, 5h",
+#   HarVsNoHar24h = "Harmine - No Harmine, 24h",
+#   HarVsNoHar48h = "Harmine - No Harmine, 48h",
+#   HarVsNoHar96h = "Harmine - No Harmine, 96h",
+#   Har5hVsNaive = "Th17 with Harmine - Naive, 5h",
+#   Har24hVsNaive = "Th17 with Harmine - Naive, 24h",
+#   Har48hVsNaive = "Th17 with Harmine - Naive, 48h",
+#   Har96hVsNaive = "Th17 with Harmine - Naive, 96h",
+#   NoHar5hVsNaive = "Th17, no Harmine - Naive, 5h",
+#   NoHar24hVsNaive = "Th17, no Harmine - Naive, 24h",
+#   NoHar48hVsNaive = "Th17, no Harmine - Naive, 48h",
+#   NoHar96hVsNaive = "Th17, no Harmine - Naive, 96h"
+# )
+
+contrast_map <- list(
+  Th17VsNaive = "All Th17 - Naive",
+  HarVsNaive = "All Th17 with Harmine - Naive",
+  NoHarVsNaive = "All Th17, no Harmine - Naive",
+  HarVsNoHar5h = "Harmine - No Harmine, 5h",
+  Har5hVsNaive = "Th17 with Harmine - Naive, 5h",
+  NoHar5hVsNaive = "Th17, no Harmine - Naive, 5h"
+)
+
+# Loop over the gsea fields
+for (field in gsea_fields) {
+  # Check if the PValue is less than 0.1
+  if (gseas[[field]]$PValue[1] < 0.1) {
+    # Split the field string at the blank space and retrieve the part before the blank space
+    geneModuleField <- strsplit(field, " ")[[1]][1]
+
+    # Get the corresponding genes from geneModules
+    highlightGenes <- geneModules[[geneModuleField]]
+
+    # Create the strings for the plot
+    # Split the field string at the blank space and retrieve the part before the blank space
+    contrast_name <- strsplit(field, " ")[[1]][2]
+
+    # Get the corresponding comparisonString from contrast_map
+    comparisonString <- contrast_map[[contrast_name]]
+    highlightGenesString <- paste0(geneModuleField, ", ")
+    pString <- paste0("p=", sprintf("%4.3f", gseas[[field]]$PValue[1]), ", ")
+    directionString <- gseas[[field]]$Direction
+    titleString <- paste0(comparisonString, " ", "\n", highlightGenesString, pString, directionString)
+
+    # Generate the plot
+    p <- limma_volcano_highlight(get(contrast_name),
+      outfile = paste0(dirPlots, "/", dataDate, "_", "gsea_", field, ".png"),
+      title = titleString,
+      gs = highlightGenes, p_cutoff = 0.05)
+
+    # Print the plot
+    print(p)
+  }
+}
+```
+
+```{r logFCScatterPlots_HarVsNaive_v_NoHarVsNaive}
+# HarVsNaive vs NoHarVsNaive - all timepoints
+# color by significance
+HarVsNaive_scatterplot <- HarVsNaive[match(NoHarVsNaive$gene, HarVsNaive$gene), ]
+png(paste0(dirPlots, "/", dataDate, "logFC_scatterplot_HarVsNaive_NoHarVsNaive_pval_colored_screening.png"),
+  res = 300, height = 5.5, width = 10,
+  unit = "in")
+plotdf <- data.frame(logFCNoHar = NoHarVsNaive$logFC,
+  logFCHar = HarVsNaive_scatterplot$logFC,
+  gene1 = HarVsNaive_scatterplot$gene,
+  gene2 = NoHarVsNaive$gene,
+  adjPValNoHar = NoHarVsNaive$adj.P.Val,
+  adjPValHar = HarVsNaive_scatterplot$adj.P.Val)
+
+# filter by adj.P.Val and logFC
+adjPValCutoff <- 0.05 # 0.05 # 0.01
+logFCCutoff <- 0
+plotdf <- plotdf %>%
+  filter(adjPValHar < adjPValCutoff, adjPValNoHar < adjPValCutoff) # ,
+# abs(logFCHar) > logFCCutoff, abs(logFCNoHar) > logFCCutoff)
+
+# Create a new variable for the mean of adjPValNoHar and adjPValHar
+plotdf$meanAdjPVal <- rowMeans(plotdf[, c("adjPValNoHar", "adjPValHar")])
+
+# Filter the data to include only the points in quadrants 2 and 4
+# plotdf_label <- plotdf %>%
+#   filter((logFCNoHar < 0 & logFCHar > 0) | (logFCNoHar > 0 & logFCHar < 0))
+
+# Calculate the distance from the y=x line
+plotdf <- plotdf %>%
+  dplyr::mutate(distance = abs(logFCNoHar - logFCHar))
+
+# Filter the points that are more than 1.5 units away from the y=x line
+plotdf_label <- plotdf %>%
+  dplyr::filter(distance > 1.5 | (logFCNoHar < 0 & logFCHar > 0) | (logFCNoHar > 0 & logFCHar < 0))
+
+openxlsx::write.xlsx(plotdf_label, paste0(dataDirOutput, "/HarVsNaive_v_NoHarVsNaive_offdiags.xlsx"))
+
+plot.tmp <- ggplot(plotdf, aes(x = logFCNoHar, y = logFCHar)) +
+  geom_point(aes(color = meanAdjPVal), shape = 21, alpha = 0.5) +
+  scale_color_gradient(low = "blue", high = "red") +  # Change the color scale as needed
+  geom_vline(xintercept = 0) +
+  geom_hline(yintercept = 0) +
+  geom_abline() +
+  ggrepel::geom_text_repel(data = plotdf_label, aes(label = gene1), max.overlaps = 50) +
+  xlab("logFC(Th17 - Naive), no Har") +  # Set x axis label
+  ylab("logFC(Th17 - Naive), Har") +  # Set y axis label
+  ggtitle("logFC DE for Th17 - Naive, all timepoints")
+
+print(plot.tmp)
+dev.off()
+
+# HarVsNaive vs NoHarVsNaive - 5h
+# color by significance
+Har5hVsNaive_scatterplot <- Har5hVsNaive[match(NoHar5hVsNaive$gene, Har5hVsNaive$gene), ]
+png(paste0(dirPlots, "/", dataDate, "logFC_scatterplot_HarVsNaive_NoHarVsNaive_5h_pval_colored_screening.png"),
+  res = 300, height = 5.5, width = 10,
+  unit = "in")
+plotdf <- data.frame(logFCNoHar = NoHar5hVsNaive$logFC,
+  logFCHar = Har5hVsNaive_scatterplot$logFC,
+  gene1 = Har5hVsNaive_scatterplot$gene,
+  gene2 = NoHar5hVsNaive$gene,
+  adjPValNoHar = NoHar5hVsNaive$adj.P.Val,
+  adjPValHar = Har5hVsNaive_scatterplot$adj.P.Val)
+
+# filter by adj.P.Val and logFC
+adjPValCutoff <- 0.05 # 0.05 # 0.01
+logFCCutoff <- 0
+plotdf <- plotdf %>%
+  filter(adjPValHar < adjPValCutoff, adjPValNoHar < adjPValCutoff) # ,
+# abs(logFCHar) > logFCCutoff, abs(logFCNoHar) > logFCCutoff)
+
+# Create a new variable for the mean of adjPValNoHar and adjPValHar
+plotdf$meanAdjPVal <- rowMeans(plotdf[, c("adjPValNoHar", "adjPValHar")])
+
+# Calculate the distance from the y=x line
+plotdf <- plotdf %>%
+  dplyr::mutate(distance = abs(logFCNoHar - logFCHar))
+
+# Filter the points that are more than 1.5 units away from the y=x line
+plotdf_label <- plotdf %>%
+  # Filter based on the sign of logFCNoHar and logFCHar
+  dplyr::filter((logFCNoHar < 0 & logFCHar > 0) | (logFCNoHar > 0 & logFCHar < 0)) %>%
+  # Select the top 50 genes in terms of 'distance'
+  dplyr::slice_max(distance, n = 50)
+
+# Select the top 50 genes in terms of 'distance'
+top_distance <- plotdf %>%
+  dplyr::slice_max(distance, n = 50)
+
+# Select the genes that meet the sign-based conditions
+sign_based <- plotdf %>%
+  dplyr::filter((logFCNoHar < 0 & logFCHar > 0) | (logFCNoHar > 0 & logFCHar < 0))
+
+# Combine the results
+combined <- dplyr::bind_rows(top_distance, sign_based)
+
+# Remove duplicates (if any)
+plotdf_label <- combined[!duplicated(combined$gene1), ]
+
+openxlsx::write.xlsx(plotdf_label, paste0(dataDirOutput, "/HarVsNaive_v_NoHarVsNaive_offdiags_5h.xlsx"))
+
+plot.tmp <- ggplot(plotdf, aes(x = logFCNoHar, y = logFCHar)) +
+  geom_point(aes(color = meanAdjPVal), shape = 21, alpha = 0.5) +
+  scale_color_gradient(low = "blue", high = "red") +  # Change the color scale as needed
+  geom_vline(xintercept = 0) +
+  geom_hline(yintercept = 0) +
+  geom_abline() +
+  ggrepel::geom_text_repel(data = plotdf_label, aes(label = gene1), max.overlaps = 500) +
+  xlab("logFC(Th17 5h - Naive), no Har") +  # Set x axis label
+  ylab("logFC(Th17 5h - Naive), Har") +  # Set y axis label
+  ggtitle("logFC DE for Th17 - Naive, 5h")
+
+print(plot.tmp)
+dev.off()
+
+HarVsNoHar5h_selected.tmp <- HarVsNoHar5h %>% dplyr::select(gene, logFC = logFC, adj.P.Val = adj.P.Val)
+Th17VsNaive_selected.tmp <- Th17VsNaive %>% dplyr::select(gene, logFC = logFC, adj.P.Val = adj.P.Val)
+
+# Merge the selected columns
+merged_df.tmp <- merge(HarVsNoHar5h_selected.tmp, Th17VsNaive_selected.tmp, by = "gene", suffixes = c("1", "2"))
+
+# Filter the merged data frame to only those genes in the intersection
+merged_df.tmp <- merged_df.tmp %>%
+  filter(gene %in% HarVsNoHar5h_Th17VsNaive_intersection)
+
+# Calculate the mean adj.P.Val and logFCDistance
+merged_df.tmp <- merged_df.tmp %>%
+  mutate(mean_adj.P.Val = (adj.P.Val1 + adj.P.Val2) / 2,
+    logFCDistance = abs(logFC1 - logFC2))
+
+# Filter the dataframe
+Th17VsNaive_HarVsNoHar5h_intersection_counterregulated <- merged_df.tmp %>%
+  filter(((adj.P.Val1 < 0.05 & abs(logFC1) > 1) & (adj.P.Val2 < 0.05 & abs(logFC2) > 1)) & (logFCDistance > 1.5 | (sign(logFC1) != sign(logFC2))))
+
+# Save the dataframe to a CSV file
+write.csv(Th17VsNaive_HarVsNoHar5h_intersection_counterregulated, file = paste0(dataDirOutput, "/Th17VsNaive_HarVsNoHar5h_intersection_counterregulated.csv"))
+
+rm_tmp(ask = FALSE)
+
+# HarVsNaive vs NoHarVsNaive - 5h
+# annotated with Bernard's intersection/counterregulation ask
+Har5hVsNaive_scatterplot <- Har5hVsNaive[match(NoHar5hVsNaive$gene, Har5hVsNaive$gene), ]
+png(paste0(dirPlots, "/", dataDate, "logFC_scatterplot_HarVsNaive_NoHarVsNaive_5h_Th17vsNaive_HarVsNoHar5h_counterreg_label.png"),
+  res = 300, height = 5.5, width = 10,
+  unit = "in")
+plotdf <- data.frame(logFCNoHar = NoHar5hVsNaive$logFC,
+  logFCHar = Har5hVsNaive_scatterplot$logFC,
+  gene1 = Har5hVsNaive_scatterplot$gene,
+  gene2 = NoHar5hVsNaive$gene,
+  adjPValNoHar = NoHar5hVsNaive$adj.P.Val,
+  adjPValHar = Har5hVsNaive_scatterplot$adj.P.Val)
+
+# filter by adj.P.Val and logFC
+adjPValCutoff <- 0.05 # 0.05 # 0.01
+logFCCutoff <- 0
+plotdf <- plotdf %>%
+  filter(adjPValHar < adjPValCutoff, adjPValNoHar < adjPValCutoff) # ,
+# abs(logFCHar) > logFCCutoff, abs(logFCNoHar) > logFCCutoff)
+
+# Create a new variable for the mean of adjPValNoHar and adjPValHar
+plotdf$meanAdjPVal <- rowMeans(plotdf[, c("adjPValNoHar", "adjPValHar")])
+
+# Calculate the distance from the y=x line
+plotdf <- plotdf %>%
+  dplyr::mutate(distance = abs(logFCNoHar - logFCHar))
+
+# Get the top 50 genes based on logFCDistance
+top_genes <- Th17VsNaive_HarVsNoHar5h_intersection_counterregulated %>%
+  top_n(50, logFCDistance) %>%
+  pull(gene)
+
+# Filter plotdf to only include the top genes
+plotdf_label <- plotdf %>%
+  filter(gene1 %in% top_genes)
+
+# openxlsx::write.xlsx(plotdf_label, paste0(dataDirOutput, "/HarVsNaive_v_NoHarVsNaive_offdiags_5h.xlsx"))
+
+plot.tmp <- ggplot(plotdf, aes(x = logFCNoHar, y = logFCHar)) +
+  geom_point(aes(color = meanAdjPVal), shape = 21, alpha = 0.5) +
+  scale_color_gradient(low = "blue", high = "red") +  # Change the color scale as needed
+  geom_vline(xintercept = 0) +
+  geom_hline(yintercept = 0) +
+  geom_abline() +
+  ggrepel::geom_text_repel(data = plotdf_label, aes(label = gene1), max.overlaps = 500) +
+  xlab("logFC(Th17 5h - Naive), no Har") +  # Set x axis label
+  ylab("logFC(Th17 5h - Naive), Har") +  # Set y axis label
+  ggtitle("logFC DE for Th17 - Naive, 5h")
+
+print(plot.tmp)
+dev.off()
+
+# Th17VsNaive vs HarVsNoHar5h
+# annotated with counter-regulated genes
+HarVsNoHar5h_scatterplot <- HarVsNoHar5h[match(Th17VsNaive$gene, HarVsNoHar5h$gene), ]
+png(paste0(dirPlots, "/", dataDate, "logFC_scatterplot_Th17VsNaive_v_HarVsNoHar5h_counterreg_label.png"),
+  res = 300, height = 5.5, width = 10,
+  unit = "in")
+plotdf <- data.frame(logFCNoHar = Th17VsNaive$logFC,
+  logFCHar = HarVsNoHar5h_scatterplot$logFC,
+  gene1 = HarVsNoHar5h_scatterplot$gene,
+  gene2 = Th17VsNaive$gene,
+  adjPValNoHar = Th17VsNaive$adj.P.Val,
+  adjPValHar = HarVsNoHar5h_scatterplot$adj.P.Val)
+
+# filter by adj.P.Val and logFC
+adjPValCutoff <- 0.05 # 0.05 # 0.01
+logFCCutoff <- 0
+plotdf <- plotdf %>%
+  filter(adjPValHar < adjPValCutoff, adjPValNoHar < adjPValCutoff) # ,
+# abs(logFCHar) > logFCCutoff, abs(logFCNoHar) > logFCCutoff)
+
+# Create a new variable for the mean of adjPValNoHar and adjPValHar
+plotdf$meanAdjPVal <- rowMeans(plotdf[, c("adjPValNoHar", "adjPValHar")])
+
+# Calculate the distance from the y=x line
+plotdf <- plotdf %>%
+  dplyr::mutate(distance = abs(logFCNoHar - logFCHar))
+# Get the top 50 genes based on logFCDistance
+top_genes <- Th17VsNaive_HarVsNoHar5h_intersection_counterregulated %>%
+  top_n(50, logFCDistance) %>%
+  pull(gene)
+
+# Filter plotdf to only include the top genes
+plotdf_label <- plotdf %>%
+  filter(gene1 %in% top_genes)
+
+# openxlsx::write.xlsx(plotdf_label, paste0(dataDirOutput, "/HarVsNaive_v_NoHarVsNaive_offdiags_5h.xlsx"))
+
+plot.tmp <- ggplot(plotdf, aes(x = logFCNoHar, y = logFCHar)) +
+  geom_point(aes(color = meanAdjPVal), shape = 21, alpha = 0.5) +
+  scale_color_gradient(low = "blue", high = "red") +  # Change the color scale as needed
+  geom_vline(xintercept = 0) +
+  geom_hline(yintercept = 0) +
+  geom_abline() +
+  ggrepel::geom_text_repel(data = plotdf_label, aes(label = gene1), max.overlaps = 500) +
+  xlab("logFC(Th17 - Naive), no Har") +  # Set x axis label
+  ylab("logFC(Th17 5h Har - Th17 5h noHar)") +  # Set y axis label
+  ggtitle("logFC DE for Th17 - Naive vs HarVNoHar 5h \nTop 50 counter-regulated genes labeled")
+
+print(plot.tmp)
+dev.off()
+
+
+# NoHar5hVsNaive vs HarVsNoHar5h
+# annotated with counter-regulated genes
+HarVsNoHar5h_scatterplot <- HarVsNoHar5h[match(NoHar5hVsNaive$gene, HarVsNoHar5h$gene), ]
+png(paste0(dirPlots, "/", dataDate, "logFC_scatterplot_NoHar5hVsNaive_v_HarVsNoHar5h_counterreg_label.png"),
+  res = 300, height = 5.5, width = 10,
+  unit = "in")
+plotdf <- data.frame(logFCNoHar = NoHar5hVsNaive$logFC,
+  logFCHar = HarVsNoHar5h_scatterplot$logFC,
+  gene1 = HarVsNoHar5h_scatterplot$gene,
+  gene2 = NoHar5hVsNaive$gene,
+  adjPValNoHar = NoHar5hVsNaive$adj.P.Val,
+  adjPValHar = HarVsNoHar5h_scatterplot$adj.P.Val)
+
+# filter by adj.P.Val and logFC
+adjPValCutoff <- 0.05 # 0.05 # 0.01
+logFCCutoff <- 0
+plotdf <- plotdf %>%
+  filter(adjPValHar < adjPValCutoff, adjPValNoHar < adjPValCutoff) # ,
+# abs(logFCHar) > logFCCutoff, abs(logFCNoHar) > logFCCutoff)
+
+# Create a new variable for the mean of adjPValNoHar and adjPValHar
+plotdf$meanAdjPVal <- rowMeans(plotdf[, c("adjPValNoHar", "adjPValHar")])
+
+# Calculate the distance from the y=x line
+plotdf <- plotdf %>%
+  dplyr::mutate(distance = abs(logFCNoHar - logFCHar))
+# Get the top 50 genes based on logFCDistance
+top_genes <- NoHar5hVsNaive_HarVsNoHar5h_intersection_counterregulated %>%
+  top_n(50, logFCDistance) %>%
+  pull(gene)
+
+# Filter plotdf to only include the top genes
+plotdf_label <- plotdf %>%
+  filter(gene1 %in% top_genes)
+
+# openxlsx::write.xlsx(plotdf_label, paste0(dataDirOutput, "/HarVsNaive_v_NoHarVsNaive_offdiags_5h.xlsx"))
+
+plot.tmp <- ggplot(plotdf, aes(x = logFCNoHar, y = logFCHar)) +
+  geom_point(aes(color = meanAdjPVal), shape = 21, alpha = 0.5) +
+  scale_color_gradient(low = "blue", high = "red") +  # Change the color scale as needed
+  geom_vline(xintercept = 0) +
+  geom_hline(yintercept = 0) +
+  geom_abline() +
+  ggrepel::geom_text_repel(data = plotdf_label, aes(label = gene1), max.overlaps = 500) +
+  xlab("logFC(Th17 - Naive), no Har") +  # Set x axis label
+  ylab("logFC(Th17 5h Har - Th17 5h noHar)") +  # Set y axis label
+  ggtitle("logFC DE for NoHar5hVsNaive vs HarVNoHar5h \nTop 50 counter-regulated genes labeled")
+
+print(plot.tmp)
+dev.off()
+
+
+
+
+# HarVsNaive vs NoHarVsNaive - 24h
+# color by significance
+Har24hVsNaive_scatterplot <- Har24hVsNaive[match(NoHar24hVsNaive$gene, Har24hVsNaive$gene), ]
+png(paste0(dirPlots, "/", dataDate, "logFC_scatterplot_HarVsNaive_NoHarVsNaive_24h_pval_colored_screening.png"),
+  res = 300, height = 5.5, width = 10,
+  unit = "in")
+plotdf <- data.frame(logFCNoHar = NoHar24hVsNaive$logFC,
+  logFCHar = Har24hVsNaive_scatterplot$logFC,
+  gene1 = Har24hVsNaive_scatterplot$gene,
+  gene2 = NoHar24hVsNaive$gene,
+  adjPValNoHar = NoHar24hVsNaive$adj.P.Val,
+  adjPValHar = Har24hVsNaive_scatterplot$adj.P.Val)
+
+# filter by adj.P.Val and logFC
+adjPValCutoff <- 0.05 # 0.05 # 0.01
+logFCCutoff <- 0
+plotdf <- plotdf %>%
+  filter(adjPValHar < adjPValCutoff, adjPValNoHar < adjPValCutoff) # ,
+# abs(logFCHar) > logFCCutoff, abs(logFCNoHar) > logFCCutoff)
+
+# Create a new variable for the mean of adjPValNoHar and adjPValHar
+plotdf$meanAdjPVal <- rowMeans(plotdf[, c("adjPValNoHar", "adjPValHar")])
+
+# Filter the data to include only the points in quadrants 2 and 4
+plotdf_label <- plotdf %>%
+  filter((logFCNoHar < 0 & logFCHar > 0) | (logFCNoHar > 0 & logFCHar < 0))
+
+openxlsx::write.xlsx(plotdf_label, paste0(dataDirOutput, "/HarVsNaive_v_NoHarVsNaive_offdiags_24h.xlsx"))
+
+plot.tmp <- ggplot(plotdf, aes(x = logFCNoHar, y = logFCHar)) +
+  geom_point(aes(color = meanAdjPVal), shape = 21, alpha = 0.5) +
+  scale_color_gradient(low = "blue", high = "red") +  # Change the color scale as needed
+  geom_vline(xintercept = 0) +
+  geom_hline(yintercept = 0) +
+  geom_abline() +
+  ggrepel::geom_text_repel(data = plotdf_label, aes(label = gene1), max.overlaps = 500) +
+  xlab("logFC(Th17 24h - Naive), no Har") +  # Set x axis label
+  ylab("logFC(Th17 24h - Naive), Har") +  # Set y axis label
+  ggtitle("logFC DE for Th17 - Naive, 24h")
+
+print(plot.tmp)
+dev.off()
+
+# HarVsNaive vs NoHarVsNaive - 48h
+# color by significance
+Har48hVsNaive_scatterplot <- Har48hVsNaive[match(NoHar48hVsNaive$gene, Har48hVsNaive$gene), ]
+png(paste0(dirPlots, "/", dataDate, "logFC_scatterplot_HarVsNaive_NoHarVsNaive_48h_pval_colored_screening.png"),
+  res = 300, height = 5.5, width = 10,
+  unit = "in")
+plotdf <- data.frame(logFCNoHar = NoHar48hVsNaive$logFC,
+  logFCHar = Har48hVsNaive_scatterplot$logFC,
+  gene1 = Har48hVsNaive_scatterplot$gene,
+  gene2 = NoHar48hVsNaive$gene,
+  adjPValNoHar = NoHar48hVsNaive$adj.P.Val,
+  adjPValHar = Har48hVsNaive_scatterplot$adj.P.Val)
+
+# filter by adj.P.Val and logFC
+adjPValCutoff <- 0.05 # 0.05 # 0.01
+logFCCutoff <- 0
+plotdf <- plotdf %>%
+  filter(adjPValHar < adjPValCutoff, adjPValNoHar < adjPValCutoff) # ,
+# abs(logFCHar) > logFCCutoff, abs(logFCNoHar) > logFCCutoff)
+
+# Create a new variable for the mean of adjPValNoHar and adjPValHar
+plotdf$meanAdjPVal <- rowMeans(plotdf[, c("adjPValNoHar", "adjPValHar")])
+
+# Filter the data to include only the points in quadrants 2 and 4
+plotdf_label <- plotdf %>%
+  filter((logFCNoHar < 0 & logFCHar > 0) | (logFCNoHar > 0 & logFCHar < 0))
+
+openxlsx::write.xlsx(plotdf_label, paste0(dataDirOutput, "/HarVsNaive_v_NoHarVsNaive_offdiags_48h.xlsx"))
+
+plot.tmp <- ggplot(plotdf, aes(x = logFCNoHar, y = logFCHar)) +
+  geom_point(aes(color = meanAdjPVal), shape = 21, alpha = 0.5) +
+  scale_color_gradient(low = "blue", high = "red") +  # Change the color scale as needed
+  geom_vline(xintercept = 0) +
+  geom_hline(yintercept = 0) +
+  geom_abline() +
+  ggrepel::geom_text_repel(data = plotdf_label, aes(label = gene1), max.overlaps = 500) +
+  xlab("logFC(Th17 48h - Naive), no Har") +  # Set x axis label
+  ylab("logFC(Th17 48h - Naive), Har") +  # Set y axis label
+  ggtitle("logFC DE for Th17 - Naive, 48h")
+
+print(plot.tmp)
+dev.off()
+
+# HarVsNaive vs NoHarVsNaive - 96h
+# color by significance
+Har96hVsNaive_scatterplot <- Har96hVsNaive[match(NoHar96hVsNaive$gene, Har96hVsNaive$gene), ]
+png(paste0(dirPlots, "/", dataDate, "logFC_scatterplot_HarVsNaive_NoHarVsNaive_96h_pval_colored_screening.png"),
+  res = 300, height = 5.5, width = 10,
+  unit = "in")
+plotdf <- data.frame(logFCNoHar = NoHar96hVsNaive$logFC,
+  logFCHar = Har96hVsNaive_scatterplot$logFC,
+  gene1 = Har96hVsNaive_scatterplot$gene,
+  gene2 = NoHar96hVsNaive$gene,
+  adjPValNoHar = NoHar96hVsNaive$adj.P.Val,
+  adjPValHar = Har96hVsNaive_scatterplot$adj.P.Val)
+
+# filter by adj.P.Val and logFC
+adjPValCutoff <- 0.05 # 0.05 # 0.01
+logFCCutoff <- 0
+plotdf <- plotdf %>%
+  filter(adjPValHar < adjPValCutoff, adjPValNoHar < adjPValCutoff) # ,
+# abs(logFCHar) > logFCCutoff, abs(logFCNoHar) > logFCCutoff)
+
+# Create a new variable for the mean of adjPValNoHar and adjPValHar
+plotdf$meanAdjPVal <- rowMeans(plotdf[, c("adjPValNoHar", "adjPValHar")])
+
+# Filter the data to include only the points in quadrants 2 and 4
+plotdf_label <- plotdf %>%
+  filter((logFCNoHar < 0 & logFCHar > 0) | (logFCNoHar > 0 & logFCHar < 0))
+# filter((logFCNoHar < -0.3 & logFCHar > 0.3) | (logFCNoHar > 0.3 & logFCHar < -0.3))
+
+openxlsx::write.xlsx(plotdf_label, paste0(dataDirOutput, "/HarVsNaive_v_NoHarVsNaive_offdiags_96h.xlsx"))
+
+plot.tmp <- ggplot(plotdf, aes(x = logFCNoHar, y = logFCHar)) +
+  geom_point(aes(color = meanAdjPVal), shape = 21, alpha = 0.5) +
+  scale_color_gradient(low = "blue", high = "red") +  # Change the color scale as needed
+  geom_vline(xintercept = 0) +
+  geom_hline(yintercept = 0) +
+  geom_abline() +
+  ggrepel::geom_text_repel(data = plotdf_label, aes(label = gene1), max.overlaps = 500) +
+  xlab("logFC(Th17 96h - Naive), no Har") +  # Set x axis label
+  ylab("logFC(Th17 96h - Naive), Har") +  # Set y axis label
+  ggtitle("logFC DE for Th17 - Naive, 96h")
+
+print(plot.tmp)
+dev.off()
+```
+
+```{r heatmapsDGE}
+# filter annotatedMetricsQC to only CD4 cells in compartment
+annotatedMetricsQC_CD4 <- annotatedMetricsQC %>%
+  dplyr::filter(compartment == "CD4")
+
+# first makes sure that the libids are in the same order in counts and annotatedMetrics
+countsPCNorm_CD4  <- countsPCNorm[, annotatedMetricsQC_CD4$libid]
+
+# Check the order, should be TRUE
+all.equal(annotatedMetricsQC_CD4$libid, colnames(countsPCNorm_CD4))
+
+# get the appropriate genes
+TscmVsNaive_CD4 <- comparisons$TscmVsNaive_CD4
+TscmVsNaive_CD8 <- comparisons$TscmVsNaive_CD8
+
+# Sort the data frame by adj.P.Val in ascending order
+TscmVsNaive_CD4_sorted <- TscmVsNaive_CD4[order(TscmVsNaive_CD4$adj.P.Val), ]
+
+# Select the 50 genes with the lowest p-values
+genes_TscmVsNaive_CD4 <- rownames(TscmVsNaive_CD4_sorted)[1:50]
+
+counts_heatmap <- countsPCNorm_CD4[rownames(countsPCNorm_CD4) %in% genes_TscmVsNaive_CD4, ]
+
+tp <- t(scale(t(log2(1 + counts_heatmap)))) # 1 instead of 0.5 ensures positive values
+
+cellType_factor <- factor(annotatedMetricsQC_CD4$cellType)
+
+# Filter palCellType to include only the levels present in cellType_factor
+palCellType_CD4 <- palCellType[names(palCellType) %in% levels(cellType_factor)]
+
+ha <- HeatmapAnnotation(studyGroup = annotatedMetricsQC_CD4$studyGroup,
+  cellType = cellType_factor,
+  col = list(studyGroup = palStudyGroup,
+    cellType = palCellType_CD4))
+
+png_res <- 600
+# png(paste0(plotDir, "/", dataDate, "_", "heatmap_DE_treatmentPeriod.png"), width = 6, height = 5.5, units = "in", res = png_res)
+png(paste0(plotDir, "/", dataDate, "_", "heatmap_DE_Tscm_v_Naive_columnsplit_CD4_top50pval.png"), width = 6, height = 5.5, units = "in", res = png_res)
+Heatmap(tp, show_column_names = FALSE,
+  show_row_names = TRUE,
+  top_annotation = ha,
+  cluster_columns = FALSE,
+  name = "z-score",
+  column_split = annotatedMetricsQC_CD4$cellType,
+  column_title = "DEGs: Tscm vs Naive, CD4",
+  row_names_gp = gpar(fontsize = 8))
+dev.off()
+```
 ## Genes differentially expressed between treatments at each timepoint
 
 This compares the samples with and without harmine at each timepoint. It should thus capture he effect of harmine throughout the differentiation period.
 
-```{r contrastsTreatmentEachTimepoint, dependson="limmaTimepointTreatment"}
+```{r contrasts.treatmentEachTimepoint, dependson="limma.timepointTreatment"}
 timepoints.tmp <- setdiff(levels(design$timepoint), "0")
-contrastsTreatmentEachTimepoint <-
+contrasts.treatmentEachTimepoint <-
   lapply(timepoints.tmp,
-         function(x)
-           as.numeric(colnames(vfitTimepointTreatment$design) %in% paste0("timepoint", x, ":treatment10uM Harmine"))) %>%
+    function(x)
+      as.numeric(colnames(vfit.timepointTreatment$design) %in% paste0("timepoint", x, ":treatment10uM Harmine"))) %>%
   bind_cols() %>%
   magrittr::set_colnames(paste0("harmine_vs_none_", timepoints.tmp)) %>%
   as.matrix()
 
-contrasts.fitTreatmentEachTimepoint <-
-  vfitTimepointTreatment %>%
-  contrasts.fit(contrasts = contrastsTreatmentEachTimepoint) %>%
+contrasts.fit.treatmentEachTimepoint <-
+  vfit.timepointTreatment %>%
+  contrasts.fit(contrasts = contrasts.treatmentEachTimepoint) %>%
   eBayes()
 
-topGenesTreatmentEachTimepointByTimepoint <- list()
-for (timepoint.tmp in (colnames(contrastsTreatmentEachTimepoint))) {
-  topGenesTreatmentEachTimepointByTimepoint[[timepoint.tmp]] <-
-    contrasts.fitTreatmentEachTimepoint %>%
+topGenes.treatmentEachTimepoint.byTimepoint <- list()
+for (timepoint.tmp in (colnames(contrasts.treatmentEachTimepoint))) {
+  topGenes.treatmentEachTimepoint.byTimepoint[[timepoint.tmp]] <-
+    contrasts.fit.treatmentEachTimepoint %>%
     topTable(
       coef = timepoint.tmp,
-      number = Inf, sortBy = "P") %>%
+      number = Inf, sort.by = "P") %>%
     rownames_to_column(var = "gene")
 }
 
 rm_tmp(ask = FALSE)
 ```
 
-```{r writeOutTopGenesTreatmentEachTimepointByTimepoint, dependson="contrastsTreatmentEachTimepoint"}
-topGenesTreatmentEachTimepointByTimepoint %>%
+```{r writeOutTopGenes.treatmentEachTimepoint.byTimepoint, dependson="contrasts.treatmentEachTimepoint"}
+topGenes.treatmentEachTimepoint.byTimepoint %>%
   writexl::write_xlsx(
     path =
       file.path(
         "data_output",
         paste0("genes_DE_harmine_vs_no_harmine_at_each_timepoint.",
-               filenameSuffix, ".xlsx")),
+          filenameSuffix, ".xlsx")),
     format_headers = FALSE)
 ```
 
 ### Volcano plots of genes differentially expressed with each condition
 
-```{r volcanoPlotParamsTreatmentEachTimepointByTimepoint, dependson="contrastsTreatmentEachTimepoint"}
-# set p-value and logFC cuts for gene labels 
-volcanoPlotParamsTreatmentEachTimepointByTimepoint <- list()
+```{r volcano_plot_settings.treatmentEachTimepoint.byTimepoint, dependson="contrasts.treatmentEachTimepoint"}
+# set p-value and logFC cuts for gene labels
+volcano_plot_params.treatmentEachTimepoint.byTimepoint <- list()
 
-# volcanoPlotParamsTreatmentEachTimepointByTimepoint[["p_cut"]] <- 1e-10
-# volcanoPlotParamsTreatmentEachTimepointByTimepoint[["fc_cut"]] <- 4.5
-volcanoPlotParamsTreatmentEachTimepointByTimepoint[["nGenesToPlot"]] <- 20
+# volcano_plot_params.treatmentEachTimepoint.byTimepoint[["p_cut"]] <- 1e-10
+# volcano_plot_params.treatmentEachTimepoint.byTimepoint[["fc_cut"]] <- 4.5
+volcano_plot_params.treatmentEachTimepoint.byTimepoint[["nGenesToPlot"]] <- 20
 
 # set plot limits across all plots
-volcanoPlotParamsTreatmentEachTimepointByTimepoint[["xLim"]] <-
-  rep(max(abs(unlist(lapply(topGenesTreatmentEachTimepointByTimepoint, function(x) x$logFC)))), 2) *
-  c(-1,1)
-volcanoPlotParamsTreatmentEachTimepointByTimepoint[["yLim"]] <-
-  c(0, max(-log10(unlist(lapply(topGenesTreatmentEachTimepointByTimepoint, function(x) x$adj.P.Val)))))
+volcano_plot_params.treatmentEachTimepoint.byTimepoint[["x_lim"]] <-
+  rep(max(abs(unlist(lapply(topGenes.treatmentEachTimepoint.byTimepoint, function(x) x$logFC)))), 2) *
+    c(-1, 1)
+volcano_plot_params.treatmentEachTimepoint.byTimepoint[["y_lim"]] <-
+  c(0, max(-log10(unlist(lapply(topGenes.treatmentEachTimepoint.byTimepoint, function(x) x$adj.P.Val)))))
 
 # set level for line indicating adjusted p-value threshold
-volcanoPlotParamsTreatmentEachTimepointByTimepoint[["adjPValueLimit"]] <- 0.05
+volcano_plot_params.treatmentEachTimepoint.byTimepoint[["adj_p_value_limit"]] <- 0.05
 ```
 
-The volcano plots below show the differential expression between harmine and no harmine, at each timepoint. Genes on the right are up-regulated with harmine, genes to the left are down-regulated with harmine. The `r volcanoPlotParamsTreatmentEachTimepointByTimepoint[["nGenesToPlot"]]` genes with the strongest combination of adjusted p-value and logFC are labeled. The horizontal dashed line indicates adjusted p-value of `r volcanoPlotParamsTreatmentEachTimepointByTimepoint[["adjPValueLimit"]]`.
+The volcano plots below show the differential expression between harmine and no harmine, at each timepoint. Genes on the right are up-regulated with harmine, genes to the left are down-regulated with harmine. The `r volcano_plot_params.treatmentEachTimepoint.byTimepoint[["nGenesToPlot"]]` genes with the strongest combination of adjusted p-value and logFC are labeled. The horizontal dashed line indicates adjusted p-value of `r volcano_plot_params.treatmentEachTimepoint.byTimepoint[["adj_p_value_limit"]]`.
 
-```{r volcanoTreatmentEachTimepointByTimepoint, fig.width=6.5, fig.height=6, dependson=c("limmaTimepointTreatment", "volcanoPlotParamsTreatmentEachTimepointByTimepoint")}
+```{r volcano.treatmentEachTimepoint.byTimepoint, fig.width=6.5, fig.height=6, dependson=c("limma.timepointTreatment", "volcano_plot_settings.treatmentEachTimepoint.byTimepoint")}
 # make plots
-for (condition.tmp in names(topGenesTreatmentEachTimepointByTimepoint)) {
+for (condition.tmp in names(topGenes.treatmentEachTimepoint.byTimepoint)) {
   print(
-    ggplot(data = topGenesTreatmentEachTimepointByTimepoint[[condition.tmp]],
-           aes(x = logFC, y = -log10(adj.P.Val))) + 
+    ggplot(data = topGenes.treatmentEachTimepoint.byTimepoint[[condition.tmp]],
+      aes(x = logFC, y = -log10(adj.P.Val))) +
       geom_point(alpha = 0.6, size = 3, shape = 16) +
       ggrepel::geom_text_repel(
         data =
-          topGenesTreatmentEachTimepointByTimepoint[[condition.tmp]] %>%
-          # dplyr::filter(
-            # (abs(logFC) >= volcanoPlotParamsTreatmentEachTimepointByTimepoint[["fc_cut"]]) |
-            #   (adj.P.Val < volcanoPlotParamsTreatmentEachTimepointByTimepoint[["p_cut"]])),
-          mutate(ordering_var = abs(logFC) * -log10(adj.P.Val)) %>%
-          dplyr::arrange(desc(ordering_var)) %>%
-          dplyr::slice(1:volcanoPlotParamsTreatmentEachTimepointByTimepoint[["nGenesToPlot"]]),
+          topGenes.treatmentEachTimepoint.byTimepoint[[condition.tmp]] %>%
+            # dplyr::filter(
+            # (abs(logFC) >= volcano_plot_params.treatmentEachTimepoint.byTimepoint[["fc_cut"]]) |
+            #   (adj.P.Val < volcano_plot_params.treatmentEachTimepoint.byTimepoint[["p_cut"]])),
+            mutate(ordering_var = abs(logFC) * -log10(adj.P.Val)) %>%
+            dplyr::arrange(desc(ordering_var)) %>%
+            dplyr::slice(1:volcano_plot_params.treatmentEachTimepoint.byTimepoint[["nGenesToPlot"]]),
         aes(label = gene), color = "black", size = 5) +
       geom_vline(xintercept = 0, linetype = "dashed") +
       geom_hline(
-        yintercept = -log10(volcanoPlotParamsTreatmentEachTimepointByTimepoint[["adjPValueLimit"]]), linetype = "dashed") +
+        yintercept = -log10(volcano_plot_params.treatmentEachTimepoint.byTimepoint[["adj_p_value_limit"]]), linetype = "dashed") +
       labs(title = condition.tmp) +
-      lims(x = volcanoPlotParamsTreatmentEachTimepointByTimepoint[["xLim"]],
-           y = volcanoPlotParamsTreatmentEachTimepointByTimepoint[["yLim"]])
+      lims(x = volcano_plot_params.treatmentEachTimepoint.byTimepoint[["x_lim"]],
+        y = volcano_plot_params.treatmentEachTimepoint.byTimepoint[["y_lim"]])
   )
 }
 
@@ -1099,127 +2692,127 @@ rm_tmp(ask = FALSE)
 
 ### Heatmaps of genes differentially expressed with treatment at each timepoint
 
-```{r heatmapSetup1TreatmentEachTimepointByTimepointGenesEach, dependson="limmaTimepointTreatment"}
-heatmapParamsTreatmentEachTimepointByTimepointGenesEach <- list()
+```{r heatmapSetup1.treatmentEachTimepoint.byTimepoint.genesEach, dependson="limma.timepointTreatment"}
+heatmapParams.treatmentEachTimepoint.byTimepoint.genesEach <- list()
 
 # set p-value and fold-change cutoffs, and determine genes to plot
-# heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["fc_cut"]] <- 1
-# heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["p_cut"]] <- 0.8
-heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["nGenes"]] <- 50
+# heatmapParams.treatmentEachTimepoint.byTimepoint.genesEach[["fc_cut"]] <- 1
+# heatmapParams.treatmentEachTimepoint.byTimepoint.genesEach[["p_cut"]] <- 0.8
+heatmapParams.treatmentEachTimepoint.byTimepoint.genesEach[["nGenes"]] <- 50
 
-heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["genesToPlot"]] <-
+heatmapParams.treatmentEachTimepoint.byTimepoint.genesEach[["genesToPlot"]] <-
   lapply(
-    topGenesTreatmentEachTimepointByTimepoint,
-  function(x) {
-    x %>%
-      # dplyr::filter(abs(logFC) > fc_cut.heatmapTreatmentEachTimepointByTimepointGenesEach) %>%
-      dplyr::arrange(P.Value) %>%
-      dplyr::slice(1:heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["nGenes"]]) %>%
-      pull(gene)
-  })
+    topGenes.treatmentEachTimepoint.byTimepoint,
+    function(x) {
+      x %>%
+        # dplyr::filter(abs(logFC) > fc_cut.heatmap.treatmentEachTimepoint.byTimepoint.genesEach) %>%
+        dplyr::arrange(P.Value) %>%
+        dplyr::slice(1:heatmapParams.treatmentEachTimepoint.byTimepoint.genesEach[["nGenes"]]) %>%
+        pull(gene)
+    })
 ```
 
-The heatmaps below show the `r heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["nGenes"]]` most strongly differentially expressed genes (by significance) between harmine and no harmine at each timepoint. The expression has been scaled within each gene so that the extreme values for each gene are more readily visible.
+The heatmaps below show the `r heatmapParams.treatmentEachTimepoint.byTimepoint.genesEach[["nGenes"]]` most strongly differentially expressed genes (by significance) between harmine and no harmine at each timepoint. The expression has been scaled within each gene so that the extreme values for each gene are more readily visible.
 
-```{r heatmapSetup2TreatmentEachTimepointByTimepointGenesEach, dependson=c("heatmapSetup1TreatmentEachTimepointByTimepointGenesEach", "setupPalettes")}
+```{r heatmapSetup2.treatmentEachTimepoint.byTimepoint.genesEach, dependson=c("heatmapSetup1.treatmentEachTimepoint.byTimepoint.genesEach", "setupPalettes")}
 # set up color scheme
-heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["annotationColors"]] <- list()
+heatmapParams.treatmentEachTimepoint.byTimepoint.genesEach[["annotationColors"]] <- list()
 
-heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["annotationColors"]][["treatment"]] <-
-  palTreatment
+heatmapParams.treatmentEachTimepoint.byTimepoint.genesEach[["annotationColors"]][["treatment"]] <-
+  pal.treatment
 
-heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["annotationColors"]][["timepoint"]] <-
+heatmapParams.treatmentEachTimepoint.byTimepoint.genesEach[["annotationColors"]][["timepoint"]] <-
   pal.timepoint
 
-heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["annotationColors"]][["donorId"]] <-
+heatmapParams.treatmentEachTimepoint.byTimepoint.genesEach[["annotationColors"]][["donorId"]] <-
   pal.donorId
 
 # Determine order of libraries (for use with counts and heatmap annotation)
-heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["libidOrder"]] <- list()
-for (condition.tmp in names(topGenesTreatmentEachTimepointByTimepoint)) {
-  heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["libidOrder"]][[condition.tmp]] <-
-    masterTimepointTreatment %>%
+heatmapParams.treatmentEachTimepoint.byTimepoint.genesEach[["libidOrder"]] <- list()
+for (condition.tmp in names(topGenes.treatmentEachTimepoint.byTimepoint)) {
+  heatmapParams.treatmentEachTimepoint.byTimepoint.genesEach[["libidOrder"]][[condition.tmp]] <-
+    master.timepointTreatment %>%
     dplyr::filter(
       treatment %in% c("none", "10uM Harmine"),
       timepoint %in% str_extract(condition.tmp, "[0-9]+h$")) %>%
     dplyr::arrange(timepoint, treatment, donorId, libid) %>%
-  pull(libid)
+    pull(libid)
 }
 
 # Make a column annotation object
-heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["columnAnnotation"]] <- list()
-for (condition.tmp in names(topGenesTreatmentEachTimepointByTimepoint)) {
-  heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["columnAnnotation"]][[condition.tmp]] <-
+heatmapParams.treatmentEachTimepoint.byTimepoint.genesEach[["columnAnnotation"]] <- list()
+for (condition.tmp in names(topGenes.treatmentEachTimepoint.byTimepoint)) {
+  heatmapParams.treatmentEachTimepoint.byTimepoint.genesEach[["columnAnnotation"]][[condition.tmp]] <-
     HeatmapAnnotation(
       name = condition.tmp,
       df =
-        masterTimepointTreatment[
-          match(heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["libidOrder"]][[condition.tmp]],
-                masterTimepointTreatment$libid),] %>%
-        dplyr::select(
-          timepoint,
-          treatment,
-          donorId) %>%
-        as.data.frame(),
+        master.timepointTreatment[
+          match(heatmapParams.treatmentEachTimepoint.byTimepoint.genesEach[["libidOrder"]][[condition.tmp]],
+            master.timepointTreatment$libid), ] %>%
+          dplyr::select(
+            timepoint,
+            treatment,
+            donorId) %>%
+          as.data.frame(),
       col = list(
         timepoint =
-          heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["annotationColors"]][["timepoint"]],
+          heatmapParams.treatmentEachTimepoint.byTimepoint.genesEach[["annotationColors"]][["timepoint"]],
         treatment =
-          heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["annotationColors"]][["treatment"]],
+          heatmapParams.treatmentEachTimepoint.byTimepoint.genesEach[["annotationColors"]][["treatment"]],
         donorId =
-          heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["annotationColors"]][["donorId"]]),
+          heatmapParams.treatmentEachTimepoint.byTimepoint.genesEach[["annotationColors"]][["donorId"]]),
       show_legend = c(TRUE, TRUE, TRUE))
 }
 
 # Set up heatmap counts matrix
-heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["countMatrix"]] <- list()
-heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["countMatrixRange01"]] <- list()
-for (condition.tmp in names(topGenesTreatmentEachTimepointByTimepoint)) {
-  heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["countMatrix"]][[condition.tmp]] <-
-    vwtsTimepointTreatment$E[
-      heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["genesToPlot"]][[condition.tmp]],
+heatmapParams.treatmentEachTimepoint.byTimepoint.genesEach[["countMatrix"]] <- list()
+heatmapParams.treatmentEachTimepoint.byTimepoint.genesEach[["countMatrix.range01"]] <- list()
+for (condition.tmp in names(topGenes.treatmentEachTimepoint.byTimepoint)) {
+  heatmapParams.treatmentEachTimepoint.byTimepoint.genesEach[["countMatrix"]][[condition.tmp]] <-
+    vwts.timepointTreatment$E[
+      heatmapParams.treatmentEachTimepoint.byTimepoint.genesEach[["genesToPlot"]][[condition.tmp]],
       match(
-        heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["libidOrder"]][[condition.tmp]],
-        colnames(vwtsTimepointTreatment))]
-  
-  heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["countMatrixRange01"]][[condition.tmp]] <-
-    heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["countMatrix"]][[condition.tmp]] %>%
-    apply(MARGIN=1, range01) %>%
-  t()
+        heatmapParams.treatmentEachTimepoint.byTimepoint.genesEach[["libidOrder"]][[condition.tmp]],
+        colnames(vwts.timepointTreatment))]
+
+  heatmapParams.treatmentEachTimepoint.byTimepoint.genesEach[["countMatrix.range01"]][[condition.tmp]] <-
+    heatmapParams.treatmentEachTimepoint.byTimepoint.genesEach[["countMatrix"]][[condition.tmp]] %>%
+    apply(MARGIN = 1, range01) %>%
+    t()
 }
 
 rm_tmp(ask = FALSE)
 ```
 
-```{r heatmapSortedTreatmentEachTimepointByTimepointGenesEach, fig.width=7, fig.height=5, dependson=c("heatmapSetup2TreatmentEachTimepointByTimepointGenesEach", "setHeatmapColors")}
-heatmapSortedTreatmentEachTimepointByTimepointGenesEach <- list()
-for (condition.tmp in names(topGenesTreatmentEachTimepointByTimepoint)) {
+```{r heatmapSorted.treatmentEachTimepoint.byTimepoint.genesEach, fig.width=7, fig.height=5, dependson=c("heatmapSetup2.treatmentEachTimepoint.byTimepoint.genesEach", "setHeatmapColors")}
+heatmapSorted.treatmentEachTimepoint.byTimepoint.genesEach <- list()
+for (condition.tmp in names(topGenes.treatmentEachTimepoint.byTimepoint)) {
   cat(condition.tmp, "\n")
-  heatmapSortedTreatmentEachTimepointByTimepointGenesEach[[condition.tmp]] <-
+  heatmapSorted.treatmentEachTimepoint.byTimepoint.genesEach[[condition.tmp]] <-
     Heatmap(
-      heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["countMatrixRange01"]][[condition.tmp]],
+      heatmapParams.treatmentEachTimepoint.byTimepoint.genesEach[["countMatrix.range01"]][[condition.tmp]],
       name = "Expression\n(scaled)",
-      # heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["countMatrix"]][[condition.tmp]],
+      # heatmapParams.treatmentEachTimepoint.byTimepoint.genesEach[["countMatrix"]][[condition.tmp]],
       # name = "Expression",
       col = heatmap_colors,
       cluster_columns = FALSE,
       show_row_names =
-        length(heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["genesToPlot"]][[condition.tmp]]) <= 50,
+        length(heatmapParams.treatmentEachTimepoint.byTimepoint.genesEach[["genesToPlot"]][[condition.tmp]]) <= 50,
       row_names_gp = gpar(fontsize = 7),
       show_column_names = FALSE,
       top_annotation =
-        heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["columnAnnotation"]][[condition.tmp]])
+        heatmapParams.treatmentEachTimepoint.byTimepoint.genesEach[["columnAnnotation"]][[condition.tmp]])
 
-  print(heatmapSortedTreatmentEachTimepointByTimepointGenesEach[[condition.tmp]])
-  
+  print(heatmapSorted.treatmentEachTimepoint.byTimepoint.genesEach[[condition.tmp]])
+
   pdf(
     file.path(
       dirPlots,
-      paste0("heatmapSortedTreatmentEachTimepointByTimepointGenesEach.",
-             condition.tmp, ".",
-             filenameSuffix, ".pdf")),
+      paste0("heatmapSorted.treatmentEachTimepoint.byTimepoint.genesEach.",
+        condition.tmp, ".",
+        filenameSuffix, ".pdf")),
     w = 7, h = 5)
-  print(heatmapSortedTreatmentEachTimepointByTimepointGenesEach[[condition.tmp]])
+  print(heatmapSorted.treatmentEachTimepoint.byTimepoint.genesEach[[condition.tmp]])
   invisible(dev.off())
 }
 
@@ -1228,112 +2821,112 @@ rm_tmp(ask = FALSE)
 
 ### Heatmaps of genes differentially expressed with treatment at each timepoint, showing all timepoints
 
-```{r heatmapSetup1TreatmentEachTimepointByTimepointGenesEachShowAll, dependson="limmaTimepointTreatment"}
-heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll <- list()
+```{r heatmapSetup1.treatmentEachTimepoint.byTimepoint.genesEachShowAll, dependson="limma.timepointTreatment"}
+heatmapParams.treatmentEachTimepoint.byTimepoint.genesEachShowAll <- list()
 
 # set p-value and fold-change cutoffs, and determine genes to plot
-# heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["fc_cut"]] <- 1
-# heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["p_cut"]] <- 0.8
-heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["nGenesToPlotEach"]] <- 15
+# heatmapParams.treatmentEachTimepoint.byTimepoint.genesEachShowAll[["fc_cut"]] <- 1
+# heatmapParams.treatmentEachTimepoint.byTimepoint.genesEachShowAll[["p_cut"]] <- 0.8
+heatmapParams.treatmentEachTimepoint.byTimepoint.genesEachShowAll[["nGenesToPlotEach"]] <- 15
 
-heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["genesToPlot"]] <-
+heatmapParams.treatmentEachTimepoint.byTimepoint.genesEachShowAll[["genesToPlot"]] <-
   lapply(
-    topGenesTreatmentEachTimepointByTimepoint,
-  function(x) {
-    x %>%
-      # dplyr::filter(abs(logFC) > fc_cut.heatmapTreatmentEachTimepointByTimepointGenesEachShowAll) %>%
-      dplyr::arrange(P.Value) %>%
-      dplyr::slice(1:heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["nGenesToPlotEach"]]) %>%
-      pull(gene)
-  }) %>%
+    topGenes.treatmentEachTimepoint.byTimepoint,
+    function(x) {
+      x %>%
+        # dplyr::filter(abs(logFC) > fc_cut.heatmap.treatmentEachTimepoint.byTimepoint.genesEachShowAll) %>%
+        dplyr::arrange(P.Value) %>%
+        dplyr::slice(1:heatmapParams.treatmentEachTimepoint.byTimepoint.genesEachShowAll[["nGenesToPlotEach"]]) %>%
+        pull(gene)
+    }) %>%
   unlist() %>%
   unique()
 ```
 
-The heatmaps below show the union of the `r heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["nGenesToPlotEach"]]` most strongly differentially expressed genes (by significance) between harmine and no harmine at each timepoint. The expression has been scaled within each gene so that the extreme values for each gene are more readily visible.
+The heatmaps below show the union of the `r heatmapParams.treatmentEachTimepoint.byTimepoint.genesEachShowAll[["nGenesToPlotEach"]]` most strongly differentially expressed genes (by significance) between harmine and no harmine at each timepoint. The expression has been scaled within each gene so that the extreme values for each gene are more readily visible.
 
-```{r heatmapSetup2TreatmentEachTimepointByTimepointGenesEachShowAll, dependson=c("heatmapSetup1TreatmentEachTimepointByTimepointGenesEachShowAll", "setupPalettes")}
+```{r heatmapSetup2.treatmentEachTimepoint.byTimepoint.genesEachShowAll, dependson=c("heatmapSetup1.treatmentEachTimepoint.byTimepoint.genesEachShowAll", "setupPalettes")}
 # set up color scheme
-heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["annotationColors"]] <- list()
+heatmapParams.treatmentEachTimepoint.byTimepoint.genesEachShowAll[["annotationColors"]] <- list()
 
-heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["annotationColors"]][["treatment"]] <-
-  palTreatment
+heatmapParams.treatmentEachTimepoint.byTimepoint.genesEachShowAll[["annotationColors"]][["treatment"]] <-
+  pal.treatment
 
-heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["annotationColors"]][["timepoint"]] <-
+heatmapParams.treatmentEachTimepoint.byTimepoint.genesEachShowAll[["annotationColors"]][["timepoint"]] <-
   pal.timepoint
 
-heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["annotationColors"]][["donorId"]] <-
+heatmapParams.treatmentEachTimepoint.byTimepoint.genesEachShowAll[["annotationColors"]][["donorId"]] <-
   pal.donorId
 
 # Determine order of libraries (for use with counts and heatmap annotation)
-heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["libidOrder"]] <- 
-  masterTimepointTreatment %>%
+heatmapParams.treatmentEachTimepoint.byTimepoint.genesEachShowAll[["libidOrder"]] <-
+  master.timepointTreatment %>%
   dplyr::arrange(timepoint, treatment, donorId, libid) %>%
   pull(libid)
 
 # Make a column annotation object
-heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["columnAnnotation"]] <- 
+heatmapParams.treatmentEachTimepoint.byTimepoint.genesEachShowAll[["columnAnnotation"]] <-
   HeatmapAnnotation(
     name = "Expression",
     df =
-      masterTimepointTreatment[
-        match(heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["libidOrder"]],
-              masterTimepointTreatment$libid),] %>%
-      dplyr::select(
-        timepoint,
-        treatment,
-        donorId) %>%
-      as.data.frame(),
+      master.timepointTreatment[
+        match(heatmapParams.treatmentEachTimepoint.byTimepoint.genesEachShowAll[["libidOrder"]],
+          master.timepointTreatment$libid), ] %>%
+        dplyr::select(
+          timepoint,
+          treatment,
+          donorId) %>%
+        as.data.frame(),
     col = list(
       timepoint =
-        heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["annotationColors"]][["timepoint"]],
+        heatmapParams.treatmentEachTimepoint.byTimepoint.genesEachShowAll[["annotationColors"]][["timepoint"]],
       treatment =
-        heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["annotationColors"]][["treatment"]],
+        heatmapParams.treatmentEachTimepoint.byTimepoint.genesEachShowAll[["annotationColors"]][["treatment"]],
       donorId =
-        heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["annotationColors"]][["donorId"]]),
+        heatmapParams.treatmentEachTimepoint.byTimepoint.genesEachShowAll[["annotationColors"]][["donorId"]]),
     show_legend = c(TRUE, TRUE, TRUE))
 
 # Set up heatmap counts matrix
-heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["countMatrix"]] <-
-  heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["countMatrix"]] <-
-    vwtsTimepointTreatment$E[
-      heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["genesToPlot"]],
-      match(
-        heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["libidOrder"]],
-        colnames(vwtsTimepointTreatment))]
+heatmapParams.treatmentEachTimepoint.byTimepoint.genesEachShowAll[["countMatrix"]] <-
+  heatmapParams.treatmentEachTimepoint.byTimepoint.genesEachShowAll[["countMatrix"]] <-
+  vwts.timepointTreatment$E[
+    heatmapParams.treatmentEachTimepoint.byTimepoint.genesEachShowAll[["genesToPlot"]],
+    match(
+      heatmapParams.treatmentEachTimepoint.byTimepoint.genesEachShowAll[["libidOrder"]],
+      colnames(vwts.timepointTreatment))]
 
-heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["countMatrixRange01"]] <-
-  heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["countMatrix"]] %>%
-  apply(MARGIN=1, range01) %>%
+heatmapParams.treatmentEachTimepoint.byTimepoint.genesEachShowAll[["countMatrix.range01"]] <-
+  heatmapParams.treatmentEachTimepoint.byTimepoint.genesEachShowAll[["countMatrix"]] %>%
+  apply(MARGIN = 1, range01) %>%
   t()
 
 rm_tmp(ask = FALSE)
 ```
 
-```{r heatmapSortedTreatmentEachTimepointByTimepointGenesEachShowAll, fig.width=8.5, fig.height=5, dependson=c("heatmapSetup2TreatmentEachTimepointByTimepointGenesEachShowAll", "setHeatmapColors")}
-heatmapSortedTreatmentEachTimepointByTimepointGenesEachShowAll <-
+```{r heatmapSorted.treatmentEachTimepoint.byTimepoint.genesEachShowAll, fig.width=8.5, fig.height=5, dependson=c("heatmapSetup2.treatmentEachTimepoint.byTimepoint.genesEachShowAll", "setHeatmapColors")}
+heatmapSorted.treatmentEachTimepoint.byTimepoint.genesEachShowAll <-
   Heatmap(
-    heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["countMatrixRange01"]],
+    heatmapParams.treatmentEachTimepoint.byTimepoint.genesEachShowAll[["countMatrix.range01"]],
     name = "Expression\n(scaled)",
-    # heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["countMatrix"]],
+    # heatmapParams.treatmentEachTimepoint.byTimepoint.genesEachShowAll[["countMatrix"]],
     # name = "Expression",
     col = heatmap_colors,
     cluster_columns = FALSE,
     show_row_names =
-      length(heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["genesToPlot"]]) <= 60,
+      length(heatmapParams.treatmentEachTimepoint.byTimepoint.genesEachShowAll[["genesToPlot"]]) <= 60,
     row_names_gp = gpar(fontsize = 6),
     show_column_names = FALSE,
     top_annotation =
-      heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["columnAnnotation"]])
+      heatmapParams.treatmentEachTimepoint.byTimepoint.genesEachShowAll[["columnAnnotation"]])
 
-print(heatmapSortedTreatmentEachTimepointByTimepointGenesEachShowAll)
+print(heatmapSorted.treatmentEachTimepoint.byTimepoint.genesEachShowAll)
 
 pdf(
   file.path(
     dirPlots,
-    paste0("heatmapSortedTreatmentEachTimepointByTimepointGenesEachShowAll.", filenameSuffix, ".pdf")),
+    paste0("heatmapSorted.treatmentEachTimepoint.byTimepoint.genesEachShowAll.", filenameSuffix, ".pdf")),
   w = 8.5, h = 5)
-print(heatmapSortedTreatmentEachTimepointByTimepointGenesEachShowAll)
+print(heatmapSorted.treatmentEachTimepoint.byTimepoint.genesEachShowAll)
 invisible(dev.off())
 ```
 
@@ -1342,37 +2935,37 @@ invisible(dev.off())
 
 This compares the samples with each treatment to the baseline sample, at each timepoint. It thus captures the gene expression changes over time without harmine, and the corresponding gene expression changes over time with harmine.
 
-```{r contrastsTimepointEachTreatment, dependson="limmaTimepointTreatment"}
-contrastsTimepointEachTreatment <- 
-  contrasts.fitTimepointEachTreatment <-
-  topGenesTimepointEachTreatmentByTreatmentTimepoint <-
+```{r contrasts.timepointEachTreatment, dependson="limma.timepointTreatment"}
+contrasts.timepointEachTreatment <-
+  contrasts.fit.timepointEachTreatment <-
+  topGenes.timepointEachTreatment.byTreatmentTimepoint <-
   list()
-timepoints.tmp <- setdiff(levels(masterTimepointTreatment$timepoint), "0")
+timepoints.tmp <- setdiff(levels(master.timepointTreatment$timepoint), "0")
 
-for (treatment.tmp in levels(masterTimepointTreatment$treatment)) {
-  contrastsTimepointEachTreatment[[treatment.tmp]] <-
+for (treatment.tmp in levels(master.timepointTreatment$treatment)) {
+  contrasts.timepointEachTreatment[[treatment.tmp]] <-
     lapply(
       timepoints.tmp,
       function(x)
         as.numeric(
-          colnames(vfitTimepointTreatment$design) %in%
+          colnames(vfit.timepointTreatment$design) %in%
             c(paste0("timepoint", x), paste0("timepoint", x, ":treatment", treatment.tmp)))) %>%
     bind_cols() %>%
     magrittr::set_colnames(paste0("timepoint_", timepoints.tmp)) %>%
     as.matrix()
-  
-  contrasts.fitTimepointEachTreatment[[treatment.tmp]] <-
-    vfitTimepointTreatment %>%
-    contrasts.fit(contrasts = contrastsTimepointEachTreatment[[treatment.tmp]]) %>%
+
+  contrasts.fit.timepointEachTreatment[[treatment.tmp]] <-
+    vfit.timepointTreatment %>%
+    contrasts.fit(contrasts = contrasts.timepointEachTreatment[[treatment.tmp]]) %>%
     eBayes()
-  
-  topGenesTimepointEachTreatmentByTreatmentTimepoint[[treatment.tmp]] <- list()
-  for (timepoint.tmp in (colnames(contrastsTimepointEachTreatment[[treatment.tmp]]))) {
-    topGenesTimepointEachTreatmentByTreatmentTimepoint[[treatment.tmp]][[timepoint.tmp]] <-
-      contrasts.fitTimepointEachTreatment[[treatment.tmp]] %>%
+
+  topGenes.timepointEachTreatment.byTreatmentTimepoint[[treatment.tmp]] <- list()
+  for (timepoint.tmp in (colnames(contrasts.timepointEachTreatment[[treatment.tmp]]))) {
+    topGenes.timepointEachTreatment.byTreatmentTimepoint[[treatment.tmp]][[timepoint.tmp]] <-
+      contrasts.fit.timepointEachTreatment[[treatment.tmp]] %>%
       topTable(
         coef = timepoint.tmp,
-        number = Inf, sortBy = "P") %>%
+        number = Inf, sort.by = "P") %>%
       rownames_to_column(var = "gene")
   }
 }
@@ -1380,78 +2973,78 @@ for (treatment.tmp in levels(masterTimepointTreatment$treatment)) {
 rm_tmp(ask = FALSE)
 ```
 
-```{r writeOutTopGenesTimepointEachTreatmentByTreatmentTimepoint, dependson="contrastsTimepointEachTreatment"}
-for (treatment.tmp in names(topGenesTimepointEachTreatmentByTreatmentTimepoint))
-  topGenesTimepointEachTreatmentByTreatmentTimepoint[[treatment.tmp]] %>%
-  writexl::write_xlsx(
-    path =
-      file.path(
-        "data_output",
-        paste0("genes_DE_treatment_vs_baseline_each_timepoint.",
-               str_replace_all(treatment.tmp, " ", "_"), ".",
-               filenameSuffix, ".xlsx")),
-    format_headers = FALSE)
+```{r writeOutTopGenes.timepointEachTreatment.byTreatmentTimepoint, dependson="contrasts.timepointEachTreatment"}
+for (treatment.tmp in names(topGenes.timepointEachTreatment.byTreatmentTimepoint))
+  topGenes.timepointEachTreatment.byTreatmentTimepoint[[treatment.tmp]] %>%
+    writexl::write_xlsx(
+      path =
+        file.path(
+          "data_output",
+          paste0("genes_DE_treatment_vs_baseline_each_timepoint.",
+            str_replace_all(treatment.tmp, " ", "_"), ".",
+            filenameSuffix, ".xlsx")),
+      format_headers = FALSE)
 ```
 
 ### Volcano plots of genes differentially expressed vs baseline, with each treatment at each timepoint
 
-```{r volcanoPlotParamsTimepointEachTreatmentByTreatmentTimepoint, dependson="contrastsTimepointEachTreatment"}
-# set p-value and logFC cuts for gene labels 
-volcanoPlotParamsTimepointEachTreatmentByTreatmentTimepoint <- list()
+```{r volcano_plot_settings.timepointEachTreatment.byTreatmentTimepoint, dependson="contrasts.timepointEachTreatment"}
+# set p-value and logFC cuts for gene labels
+volcano_plot_params.timepointEachTreatment.byTreatmentTimepoint <- list()
 
-# volcanoPlotParamsTimepointEachTreatmentByTreatmentTimepoint[["p_cut"]] <- 1e-10
-# volcanoPlotParamsTimepointEachTreatmentByTreatmentTimepoint[["fc_cut"]] <- 4.5
-volcanoPlotParamsTimepointEachTreatmentByTreatmentTimepoint[["nGenesToPlot"]] <- 20
+# volcano_plot_params.timepointEachTreatment.byTreatmentTimepoint[["p_cut"]] <- 1e-10
+# volcano_plot_params.timepointEachTreatment.byTreatmentTimepoint[["fc_cut"]] <- 4.5
+volcano_plot_params.timepointEachTreatment.byTreatmentTimepoint[["nGenesToPlot"]] <- 20
 
 # set plot limits across all plots
-volcanoPlotParamsTimepointEachTreatmentByTreatmentTimepoint[["xLim"]] <-
-  lapply(topGenesTimepointEachTreatmentByTreatmentTimepoint,
-         function(x) lapply(x, function(y) y$logFC)) %>%
+volcano_plot_params.timepointEachTreatment.byTreatmentTimepoint[["x_lim"]] <-
+  lapply(topGenes.timepointEachTreatment.byTreatmentTimepoint,
+    function(x) lapply(x, function(y) y$logFC)) %>%
   unlist() %>%
   abs() %>%
   max() %>%
-  multiply_by(c(-1,1))
-volcanoPlotParamsTimepointEachTreatmentByTreatmentTimepoint[["yLim"]] <-
+  multiply_by(c(-1, 1))
+volcano_plot_params.timepointEachTreatment.byTreatmentTimepoint[["y_lim"]] <-
   c(0,
-    lapply(topGenesTimepointEachTreatmentByTreatmentTimepoint,
-         function(x) lapply(x, function(y) y$adj.P.Val)) %>%
+    lapply(topGenes.timepointEachTreatment.byTreatmentTimepoint,
+      function(x) lapply(x, function(y) y$adj.P.Val)) %>%
       unlist() %>%
       log10() %>%
       multiply_by(-1) %>%
       max()
-    )
+  )
 
 # set level for line indicating adjusted p-value threshold
-volcanoPlotParamsTimepointEachTreatmentByTreatmentTimepoint[["adjPValueLimit"]] <- 0.05
+volcano_plot_params.timepointEachTreatment.byTreatmentTimepoint[["adj_p_value_limit"]] <- 0.05
 ```
 
-The volcano plots below show the differential expression vs baseline with each treatment, at each timepoint. Genes on the right are up-regulated at the specified timepoint, genes to the left are down-regulated at the specified timepoint The `r volcanoPlotParamsTimepointEachTreatmentByTreatmentTimepoint[["nGenesToPlot"]]` genes with the strongest combination of adjusted p-value and logFC are labeled. The horizontal dashed line indicates adjusted p-value of `r volcanoPlotParamsTimepointEachTreatmentByTreatmentTimepoint[["adjPValueLimit"]]`.
+The volcano plots below show the differential expression vs baseline with each treatment, at each timepoint. Genes on the right are up-regulated at the specified timepoint, genes to the left are down-regulated at the specified timepoint The `r volcano_plot_params.timepointEachTreatment.byTreatmentTimepoint[["nGenesToPlot"]]` genes with the strongest combination of adjusted p-value and logFC are labeled. The horizontal dashed line indicates adjusted p-value of `r volcano_plot_params.timepointEachTreatment.byTreatmentTimepoint[["adj_p_value_limit"]]`.
 
-```{r volcanoTimepointEachTreatmentByTreatmentTimepoint, fig.width=6.5, fig.height=6, dependson=c("contrastsTimepointEachTreatment", "volcanoPlotParamsTimepointEachTreatmentByTreatmentTimepoint")}
+```{r volcano.timepointEachTreatment.byTreatmentTimepoint, fig.width=6.5, fig.height=6, dependson=c("contrasts.timepointEachTreatment", "volcano_plot_settings.timepointEachTreatment.byTreatmentTimepoint")}
 # make plots
-for (treatment.tmp in names(topGenesTimepointEachTreatmentByTreatmentTimepoint)) {
-  for (timepoint.tmp in names(topGenesTimepointEachTreatmentByTreatmentTimepoint[[treatment.tmp]])) {
+for (treatment.tmp in names(topGenes.timepointEachTreatment.byTreatmentTimepoint)) {
+  for (timepoint.tmp in names(topGenes.timepointEachTreatment.byTreatmentTimepoint[[treatment.tmp]])) {
     plot.tmp <-
-      ggplot(data = topGenesTimepointEachTreatmentByTreatmentTimepoint[[treatment.tmp]][[timepoint.tmp]],
-             aes(x = logFC, y = -log10(adj.P.Val))) + 
+      ggplot(data = topGenes.timepointEachTreatment.byTreatmentTimepoint[[treatment.tmp]][[timepoint.tmp]],
+        aes(x = logFC, y = -log10(adj.P.Val))) +
       geom_point(alpha = 0.6, size = 3, shape = 16) +
       ggrepel::geom_text_repel(
         data =
-          topGenesTimepointEachTreatmentByTreatmentTimepoint[[treatment.tmp]][[timepoint.tmp]] %>%
-          # dplyr::filter(
-          # (abs(logFC) >= volcanoPlotParamsTimepointEachTreatmentByTreatmentTimepoint[["fc_cut"]]) |
-          #   (adj.P.Val < volcanoPlotParamsTimepointEachTreatmentByTreatmentTimepoint[["p_cut"]])),
-          mutate(ordering_var = abs(logFC) * -log10(adj.P.Val)) %>%
-          dplyr::arrange(desc(ordering_var)) %>%
-          dplyr::slice(1:volcanoPlotParamsTimepointEachTreatmentByTreatmentTimepoint[["nGenesToPlot"]]),
+          topGenes.timepointEachTreatment.byTreatmentTimepoint[[treatment.tmp]][[timepoint.tmp]] %>%
+            # dplyr::filter(
+            # (abs(logFC) >= volcano_plot_params.timepointEachTreatment.byTreatmentTimepoint[["fc_cut"]]) |
+            #   (adj.P.Val < volcano_plot_params.timepointEachTreatment.byTreatmentTimepoint[["p_cut"]])),
+            mutate(ordering_var = abs(logFC) * -log10(adj.P.Val)) %>%
+            dplyr::arrange(desc(ordering_var)) %>%
+            dplyr::slice(1:volcano_plot_params.timepointEachTreatment.byTreatmentTimepoint[["nGenesToPlot"]]),
         aes(label = gene), color = "black", size = 5) +
       geom_vline(xintercept = 0, linetype = "dashed") +
       geom_hline(
-        yintercept = -log10(volcanoPlotParamsTimepointEachTreatmentByTreatmentTimepoint[["adjPValueLimit"]]),
+        yintercept = -log10(volcano_plot_params.timepointEachTreatment.byTreatmentTimepoint[["adj_p_value_limit"]]),
         linetype = "dashed") +
       labs(title = paste0(timepoint.tmp, ", treatment: ", treatment.tmp)) +
-      lims(x = volcanoPlotParamsTimepointEachTreatmentByTreatmentTimepoint[["xLim"]],
-           y = volcanoPlotParamsTimepointEachTreatmentByTreatmentTimepoint[["yLim"]]) +
+      lims(x = volcano_plot_params.timepointEachTreatment.byTreatmentTimepoint[["x_lim"]],
+        y = volcano_plot_params.timepointEachTreatment.byTreatmentTimepoint[["y_lim"]]) +
       theme(title = element_text(size = rel(0.8)))
     print(plot.tmp)
   }
@@ -1462,52 +3055,52 @@ rm_tmp(ask = FALSE)
 
 ### Heatmaps of genes differentially expressed vs baseline, with each treatment at each timepoint
 
-```{r heatmapSetup1TimepointEachTreatmentByTreatmentTimepointGenesEach, dependson="limmaTimepointTreatment"}
-heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach <- list()
+```{r heatmapSetup1.timepointEachTreatment.byTreatmentTimepoint.genesEach, dependson="limma.timepointTreatment"}
+heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEach <- list()
 
 # set p-value and fold-change cutoffs, and determine genes to plot
-# heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["fc_cut"]] <- 1
-# heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["p_cut"]] <- 0.8
-heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["nGenes"]] <- 50
+# heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEach[["fc_cut"]] <- 1
+# heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEach[["p_cut"]] <- 0.8
+heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEach[["nGenes"]] <- 50
 
-heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["genesToPlot"]] <-
+heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEach[["genesToPlot"]] <-
   lapply(
-    topGenesTimepointEachTreatmentByTreatmentTimepoint,
+    topGenes.timepointEachTreatment.byTreatmentTimepoint,
     function(x) {
       lapply(
-        x, 
+        x,
         function(y) {
           y %>%
-            # dplyr::filter(abs(logFC) > fc_cut.heatmapTimepointEachTreatmentByTreatmentTimepointGenesEach) %>%
+            # dplyr::filter(abs(logFC) > fc_cut.heatmap.timepointEachTreatment.byTreatmentTimepoint.genesEach) %>%
             dplyr::arrange(P.Value) %>%
-            dplyr::slice(1:heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["nGenes"]]) %>%
+            dplyr::slice(1:heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEach[["nGenes"]]) %>%
             pull(gene)
         })
     })
 ```
 
-The heatmaps below show the `r heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["nGenes"]]` most strongly differentially expressed genes (by significance)  with each treatment, at each timepoint. The expression has been scaled within each gene so that the extreme values for each gene are more readily visible.
+The heatmaps below show the `r heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEach[["nGenes"]]` most strongly differentially expressed genes (by significance)  with each treatment, at each timepoint. The expression has been scaled within each gene so that the extreme values for each gene are more readily visible.
 
-```{r heatmapSetup2TimepointEachTreatmentByTreatmentTimepointGenesEach, dependson=c("heatmapSetup1TimepointEachTreatmentByTreatmentTimepointGenesEach", "setupPalettes")}
+```{r heatmapSetup2.timepointEachTreatment.byTreatmentTimepoint.genesEach, dependson=c("heatmapSetup1.timepointEachTreatment.byTreatmentTimepoint.genesEach", "setupPalettes")}
 # set up color scheme
-heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["annotationColors"]] <- list()
+heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEach[["annotationColors"]] <- list()
 
-heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["annotationColors"]][["treatment"]] <-
-  palTreatment
+heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEach[["annotationColors"]][["treatment"]] <-
+  pal.treatment
 
-heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["annotationColors"]][["timepoint"]] <-
+heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEach[["annotationColors"]][["timepoint"]] <-
   pal.timepoint
 
-heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["annotationColors"]][["donorId"]] <-
+heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEach[["annotationColors"]][["donorId"]] <-
   pal.donorId
 
 # Determine order of libraries (for use with counts and heatmap annotation)
-heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["libidOrder"]] <- list()
-for (treatment.tmp in names(topGenesTimepointEachTreatmentByTreatmentTimepoint)) {
-  heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["libidOrder"]][[treatment.tmp]] <- list()
-  for (timepoint.tmp in names(topGenesTimepointEachTreatmentByTreatmentTimepoint[[treatment.tmp]])) {
-    heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["libidOrder"]][[treatment.tmp]][[timepoint.tmp]] <-
-      masterTimepointTreatment %>%
+heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEach[["libidOrder"]] <- list()
+for (treatment.tmp in names(topGenes.timepointEachTreatment.byTreatmentTimepoint)) {
+  heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEach[["libidOrder"]][[treatment.tmp]] <- list()
+  for (timepoint.tmp in names(topGenes.timepointEachTreatment.byTreatmentTimepoint[[treatment.tmp]])) {
+    heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEach[["libidOrder"]][[treatment.tmp]][[timepoint.tmp]] <-
+      master.timepointTreatment %>%
       dplyr::filter(
         (timepoint == "0") |
           ((treatment %in% treatment.tmp) & (timepoint %in% str_extract(timepoint.tmp, "[0-9]+h$")))) %>%
@@ -1517,50 +3110,50 @@ for (treatment.tmp in names(topGenesTimepointEachTreatmentByTreatmentTimepoint))
 }
 
 # Make a column annotation object
-heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["columnAnnotation"]] <- list()
-for (treatment.tmp in names(topGenesTimepointEachTreatmentByTreatmentTimepoint)) {
-  heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["columnAnnotation"]][[treatment.tmp]] <- list()
-  for (timepoint.tmp in names(topGenesTimepointEachTreatmentByTreatmentTimepoint[[treatment.tmp]])) {
-    heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["columnAnnotation"]][[treatment.tmp]][[timepoint.tmp]] <-
+heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEach[["columnAnnotation"]] <- list()
+for (treatment.tmp in names(topGenes.timepointEachTreatment.byTreatmentTimepoint)) {
+  heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEach[["columnAnnotation"]][[treatment.tmp]] <- list()
+  for (timepoint.tmp in names(topGenes.timepointEachTreatment.byTreatmentTimepoint[[treatment.tmp]])) {
+    heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEach[["columnAnnotation"]][[treatment.tmp]][[timepoint.tmp]] <-
       HeatmapAnnotation(
         name = paste("Effect of", treatment.tmp, "\nat", timepoint.tmp),
         df =
-          masterTimepointTreatment[
-            match(heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["libidOrder"]][[treatment.tmp]][[timepoint.tmp]],
-                  masterTimepointTreatment$libid),] %>%
-          dplyr::select(
-            treatment,
-            timepoint,
-            donorId) %>%
-          as.data.frame(),
+          master.timepointTreatment[
+            match(heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEach[["libidOrder"]][[treatment.tmp]][[timepoint.tmp]],
+              master.timepointTreatment$libid), ] %>%
+            dplyr::select(
+              treatment,
+              timepoint,
+              donorId) %>%
+            as.data.frame(),
         col = list(
           treatment =
-            heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["annotationColors"]][["treatment"]],
+            heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEach[["annotationColors"]][["treatment"]],
           timepoint =
-            heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["annotationColors"]][["timepoint"]],
+            heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEach[["annotationColors"]][["timepoint"]],
           donorId =
-            heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["annotationColors"]][["donorId"]]),
+            heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEach[["annotationColors"]][["donorId"]]),
         show_legend = c(TRUE, TRUE, TRUE))
   }
 }
 
 # Set up heatmap counts matrix
-heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["countMatrix"]] <- list()
-heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["countMatrixRange01"]] <- list()
-for (treatment.tmp in names(topGenesTimepointEachTreatmentByTreatmentTimepoint)) {
-  heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["countMatrix"]][[treatment.tmp]] <- list()
-  heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["countMatrixRange01"]][[treatment.tmp]] <- list()
-  for (timepoint.tmp in names(topGenesTimepointEachTreatmentByTreatmentTimepoint[[treatment.tmp]])) {
-    heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["countMatrix"]][[treatment.tmp]][[timepoint.tmp]] <-
-      vwtsTimepointTreatment$E[
-        heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["genesToPlot"]][[treatment.tmp]][[timepoint.tmp]],
+heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEach[["countMatrix"]] <- list()
+heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEach[["countMatrix.range01"]] <- list()
+for (treatment.tmp in names(topGenes.timepointEachTreatment.byTreatmentTimepoint)) {
+  heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEach[["countMatrix"]][[treatment.tmp]] <- list()
+  heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEach[["countMatrix.range01"]][[treatment.tmp]] <- list()
+  for (timepoint.tmp in names(topGenes.timepointEachTreatment.byTreatmentTimepoint[[treatment.tmp]])) {
+    heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEach[["countMatrix"]][[treatment.tmp]][[timepoint.tmp]] <-
+      vwts.timepointTreatment$E[
+        heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEach[["genesToPlot"]][[treatment.tmp]][[timepoint.tmp]],
         match(
-          heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["libidOrder"]][[treatment.tmp]][[timepoint.tmp]],
-          colnames(vwtsTimepointTreatment))]
-    
-    heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["countMatrixRange01"]][[treatment.tmp]][[timepoint.tmp]] <-
-      heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["countMatrix"]][[treatment.tmp]][[timepoint.tmp]] %>%
-      apply(MARGIN=1, range01) %>%
+          heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEach[["libidOrder"]][[treatment.tmp]][[timepoint.tmp]],
+          colnames(vwts.timepointTreatment))]
+
+    heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEach[["countMatrix.range01"]][[treatment.tmp]][[timepoint.tmp]] <-
+      heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEach[["countMatrix"]][[treatment.tmp]][[timepoint.tmp]] %>%
+      apply(MARGIN = 1, range01) %>%
       t()
   }
 }
@@ -1568,64 +3161,64 @@ for (treatment.tmp in names(topGenesTimepointEachTreatmentByTreatmentTimepoint))
 rm_tmp(ask = FALSE)
 ```
 
-```{r heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEach, fig.width=7, fig.height=5, dependson=c("heatmapSetup2TimepointEachTreatmentByTreatmentTimepointGenesEach", "setHeatmapColors")}
-heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEach <- list()
-for (treatment.tmp in names(topGenesTimepointEachTreatmentByTreatmentTimepoint)) {
-  heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEach[[treatment.tmp]] <- list()
-  for (timepoint.tmp in names(topGenesTimepointEachTreatmentByTreatmentTimepoint[[treatment.tmp]])) {
+```{r heatmapSorted.timepointEachTreatment.byTreatmentTimepoint.genesEach, fig.width=7, fig.height=5, dependson=c("heatmapSetup2.timepointEachTreatment.byTreatmentTimepoint.genesEach", "setHeatmapColors")}
+heatmapSorted.timepointEachTreatment.byTreatmentTimepoint.genesEach <- list()
+for (treatment.tmp in names(topGenes.timepointEachTreatment.byTreatmentTimepoint)) {
+  heatmapSorted.timepointEachTreatment.byTreatmentTimepoint.genesEach[[treatment.tmp]] <- list()
+  for (timepoint.tmp in names(topGenes.timepointEachTreatment.byTreatmentTimepoint[[treatment.tmp]])) {
     cat("\nEffect of", treatment.tmp, "at", timepoint.tmp, "\n")
-    heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEach[[treatment.tmp]][[timepoint.tmp]] <-
+    heatmapSorted.timepointEachTreatment.byTreatmentTimepoint.genesEach[[treatment.tmp]][[timepoint.tmp]] <-
       Heatmap(
-        heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["countMatrixRange01"]][[treatment.tmp]][[timepoint.tmp]],
+        heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEach[["countMatrix.range01"]][[treatment.tmp]][[timepoint.tmp]],
         name = "Expression\n(scaled)",
-        # heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["countMatrix"]][[treatment.tmp]][[timepoint.tmp]],
+        # heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEach[["countMatrix"]][[treatment.tmp]][[timepoint.tmp]],
         # name = "Expression",
         col = heatmap_colors,
         cluster_columns = FALSE,
         show_row_names =
           length(
-            heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["genesToPlot"]][[treatment.tmp]][[timepoint.tmp]]) <= 50,
+            heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEach[["genesToPlot"]][[treatment.tmp]][[timepoint.tmp]]) <= 50,
         row_names_gp = gpar(fontsize = 7),
         show_column_names = FALSE,
         top_annotation =
-          heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["columnAnnotation"]][[treatment.tmp]][[timepoint.tmp]])
-    
-    print(heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEach[[treatment.tmp]][[timepoint.tmp]])
-    
+          heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEach[["columnAnnotation"]][[treatment.tmp]][[timepoint.tmp]])
+
+    print(heatmapSorted.timepointEachTreatment.byTreatmentTimepoint.genesEach[[treatment.tmp]][[timepoint.tmp]])
+
     pdf(
       file.path(
         dirPlots,
-        paste0("heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEach.",
-               treatment.tmp, "_at_", timepoint.tmp, ".",
-               filenameSuffix, ".pdf")),
+        paste0("heatmapSorted.timepointEachTreatment.byTreatmentTimepoint.genesEach.",
+          treatment.tmp, "_at_", timepoint.tmp, ".",
+          filenameSuffix, ".pdf")),
       w = 7, h = 5)
-    print(heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEach[[treatment.tmp]][[timepoint.tmp]])
+    print(heatmapSorted.timepointEachTreatment.byTreatmentTimepoint.genesEach[[treatment.tmp]][[timepoint.tmp]])
     invisible(dev.off())
   }
-}  
+}
 
 rm_tmp(ask = FALSE)
 ```
 
 ### Heatmap of genes differentially expressed vs baseline, with each treatment at each timepoint, showing all timepoints
 
-```{r heatmapSetup1TimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints, dependson="limmaTimepointTreatment"}
-heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints <- list()
+```{r heatmapSetup1.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepoints, dependson="limma.timepointTreatment"}
+heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepoints <- list()
 
 # set p-value and fold-change cutoffs, and determine genes to plot
-# heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["fc_cut"]] <- 1
-# heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["p_cut"]] <- 0.8
-heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["nGenesToPlotEach"]] <- 15
+# heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepoints[["fc_cut"]] <- 1
+# heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepoints[["p_cut"]] <- 0.8
+heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepoints[["nGenesToPlotEach"]] <- 15
 
-heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["genesToPlot"]] <-
+heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepoints[["genesToPlot"]] <-
   lapply(
-    topGenesTimepointEachTreatmentByTreatmentTimepoint,
+    topGenes.timepointEachTreatment.byTreatmentTimepoint,
     function(x) {
       lapply(x, function(y) {
         y %>%
-          # dplyr::filter(abs(logFC) > fc_cut.heatmapTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints) %>%
+          # dplyr::filter(abs(logFC) > fc_cut.heatmap.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepoints) %>%
           dplyr::arrange(P.Value) %>%
-          dplyr::slice(1:heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["nGenesToPlotEach"]]) %>%
+          dplyr::slice(1:heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepoints[["nGenesToPlotEach"]]) %>%
           pull(gene)
       }) %>%
         unlist() %>%
@@ -1633,26 +3226,26 @@ heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoint
     })
 ```
 
-The heatmaps below show the union of the `r heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["nGenesToPlotEach"]]` most strongly differentially expressed genes (by significance) at each timepoint vs baseline, for each treatment. The expression has been scaled within each gene so that the extreme values for each gene are more readily visible.
+The heatmaps below show the union of the `r heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepoints[["nGenesToPlotEach"]]` most strongly differentially expressed genes (by significance) at each timepoint vs baseline, for each treatment. The expression has been scaled within each gene so that the extreme values for each gene are more readily visible.
 
-```{r heatmapSetup2TimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints, dependson=c("heatmapSetup1TimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints", "setupPalettes")}
+```{r heatmapSetup2.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepoints, dependson=c("heatmapSetup1.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepoints", "setupPalettes")}
 # set up color scheme
-heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["annotationColors"]] <- list()
+heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepoints[["annotationColors"]] <- list()
 
-heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["annotationColors"]][["treatment"]] <-
-  palTreatment
+heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepoints[["annotationColors"]][["treatment"]] <-
+  pal.treatment
 
-heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["annotationColors"]][["timepoint"]] <-
+heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepoints[["annotationColors"]][["timepoint"]] <-
   pal.timepoint
 
-heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["annotationColors"]][["donorId"]] <-
+heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepoints[["annotationColors"]][["donorId"]] <-
   pal.donorId
 
 # Determine order of libraries (for use with counts and heatmap annotation)
-heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["libidOrder"]] <- list()
-for (treatment.tmp in names(topGenesTimepointEachTreatmentByTreatmentTimepoint)) {
-  heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["libidOrder"]][[treatment.tmp]] <-
-    masterTimepointTreatment %>%
+heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepoints[["libidOrder"]] <- list()
+for (treatment.tmp in names(topGenes.timepointEachTreatment.byTreatmentTimepoint)) {
+  heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepoints[["libidOrder"]][[treatment.tmp]] <-
+    master.timepointTreatment %>%
     dplyr::filter(
       (timepoint == "0") | (treatment %in% treatment.tmp)) %>%
     dplyr::arrange(treatment, timepoint, donorId, libid) %>%
@@ -1660,78 +3253,78 @@ for (treatment.tmp in names(topGenesTimepointEachTreatmentByTreatmentTimepoint))
 }
 
 # Make a column annotation object
-heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["columnAnnotation"]] <- list()
-for (treatment.tmp in names(topGenesTimepointEachTreatmentByTreatmentTimepoint)) {
-  heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["columnAnnotation"]][[treatment.tmp]] <-
+heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepoints[["columnAnnotation"]] <- list()
+for (treatment.tmp in names(topGenes.timepointEachTreatment.byTreatmentTimepoint)) {
+  heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepoints[["columnAnnotation"]][[treatment.tmp]] <-
     HeatmapAnnotation(
       name = "Expression",
       df =
-        masterTimepointTreatment[
-          match(heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["libidOrder"]][[treatment.tmp]],
-                masterTimepointTreatment$libid),] %>%
-        dplyr::select(
-          timepoint,
-          treatment,
-          donorId) %>%
-        as.data.frame(),
+        master.timepointTreatment[
+          match(heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepoints[["libidOrder"]][[treatment.tmp]],
+            master.timepointTreatment$libid), ] %>%
+          dplyr::select(
+            timepoint,
+            treatment,
+            donorId) %>%
+          as.data.frame(),
       col = list(
         treatment =
-          heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["annotationColors"]][["treatment"]],
+          heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepoints[["annotationColors"]][["treatment"]],
         timepoint =
-          heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["annotationColors"]][["timepoint"]],
+          heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepoints[["annotationColors"]][["timepoint"]],
         donorId =
-          heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["annotationColors"]][["donorId"]]),
+          heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepoints[["annotationColors"]][["donorId"]]),
       show_legend = c(TRUE, TRUE, TRUE))
 }
 
 # Set up heatmap counts matrix
-heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["countMatrix"]] <- list()
-heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["countMatrixRange01"]] <- list()
-for (treatment.tmp in names(topGenesTimepointEachTreatmentByTreatmentTimepoint)) {
-  heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["countMatrix"]][[treatment.tmp]] <-
-    vwtsTimepointTreatment$E[
-      heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["genesToPlot"]][[treatment.tmp]],
+heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepoints[["countMatrix"]] <- list()
+heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepoints[["countMatrix.range01"]] <- list()
+for (treatment.tmp in names(topGenes.timepointEachTreatment.byTreatmentTimepoint)) {
+  heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepoints[["countMatrix"]][[treatment.tmp]] <-
+    vwts.timepointTreatment$E[
+      heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepoints[["genesToPlot"]][[treatment.tmp]],
       match(
-        heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["libidOrder"]][[treatment.tmp]],
-        colnames(vwtsTimepointTreatment))]
+        heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepoints[["libidOrder"]][[treatment.tmp]],
+        colnames(vwts.timepointTreatment))]
 
-  heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["countMatrixRange01"]][[treatment.tmp]] <-
-    heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["countMatrix"]][[treatment.tmp]] %>%
-    apply(MARGIN=1, range01) %>%
+  heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepoints[["countMatrix.range01"]][[treatment.tmp]] <-
+    heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepoints[["countMatrix"]][[treatment.tmp]] %>%
+    apply(MARGIN = 1, range01) %>%
     t()
 }
-  
+
 rm_tmp(ask = FALSE)
 ```
 
-```{r heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints, fig.width=8.5, fig.height=5, dependson=c("heatmapSetup2TimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints", "setHeatmapColors")}
-heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints <- list()
-for (treatment.tmp in names(topGenesTimepointEachTreatmentByTreatmentTimepoint)) {
-  heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[[treatment.tmp]] <-
-  Heatmap(
-    heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["countMatrixRange01"]][[treatment.tmp]],
-    name = "Expression\n(scaled)",
-    # heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["countMatrix"]],
-    # name = "Expression",
-    col = heatmap_colors,
-    cluster_columns = FALSE,
-    show_row_names =
-      length(heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["genesToPlot"]][[treatment.tmp]]) <= 50,
-    row_names_gp = gpar(fontsize = 8),
-    show_column_names = FALSE,
-    top_annotation =
-      heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["columnAnnotation"]][[treatment.tmp]])
-  
-  print(heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[[treatment.tmp]])
-  
+```{r heatmapSorted.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepoints, fig.width=8.5, fig.height=5, dependson=c("heatmapSetup2.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepoints", "setHeatmapColors")}
+heatmapSorted.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepoints <- list()
+for (treatment.tmp in names(topGenes.timepointEachTreatment.byTreatmentTimepoint)) {
+  heatmapSorted.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepoints[[treatment.tmp]] <-
+    Heatmap(
+      heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepoints[["countMatrix.range01"]][[treatment.tmp]],
+      name = "Expression\n(scaled)",
+      # heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepoints[["countMatrix"]],
+      # name = "Expression",
+      col = heatmap_colors,
+      cluster_columns = FALSE,
+      show_row_names =
+        length(heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepoints[["genesToPlot"]][[treatment.tmp]]) <= 50,
+      row_names_gp = gpar(fontsize = 8),
+      show_column_names = FALSE,
+      top_annotation =
+        heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepoints[["columnAnnotation"]][[treatment.tmp]])
+
+  print(heatmapSorted.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepoints[[treatment.tmp]])
+
   pdf(
     file.path(
       dirPlots,
-      paste0("heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints.",
-             treatment.tmp, ".",
-             filenameSuffix, ".pdf")),
+      paste0("heatmapSorted.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepoints.",
+        treatment.tmp, ".",
+        filenameSuffix, ".pdf")),
     w = 8.5, h = 5)
-  print(heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[[treatment.tmp]])
+  print(heatmapSorted.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepoints[[treatment.tmp]])
   invisible(dev.off())
 }
 
@@ -1741,23 +3334,23 @@ rm_tmp(ask = FALSE)
   
 ### Heatmap of genes differentially expressed vs baseline, with each treatment at each timepoint, showing all treatments and all timepoints
 
-```{r heatmapSetup1TimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints, dependson="limmaTimepointTreatment"}
-heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints <- list()
+```{r heatmapSetup1.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTreatmentsTimepoints, dependson="limma.timepointTreatment"}
+heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTreatmentsTimepoints <- list()
 
 # set p-value and fold-change cutoffs, and determine genes to plot
-# heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["fc_cut"]] <- 1
-# heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["p_cut"]] <- 0.8
-heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["nGenesToPlotEach"]] <- 15
+# heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTreatmentsTimepoints[["fc_cut"]] <- 1
+# heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTreatmentsTimepoints[["p_cut"]] <- 0.8
+heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTreatmentsTimepoints[["nGenesToPlotEach"]] <- 15
 
-heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["genesToPlot"]] <-
+heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTreatmentsTimepoints[["genesToPlot"]] <-
   lapply(
-    topGenesTimepointEachTreatmentByTreatmentTimepoint,
+    topGenes.timepointEachTreatment.byTreatmentTimepoint,
     function(x) {
       lapply(x, function(y) {
         y %>%
-          # dplyr::filter(abs(logFC) > fc_cut.heatmapTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints) %>%
+          # dplyr::filter(abs(logFC) > fc_cut.heatmap.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTreatmentsTimepoints) %>%
           dplyr::arrange(P.Value) %>%
-          dplyr::slice(1:heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["nGenesToPlotEach"]]) %>%
+          dplyr::slice(1:heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTreatmentsTimepoints[["nGenesToPlotEach"]]) %>%
           pull(gene)
       }) %>%
         unlist()
@@ -1766,110 +3359,110 @@ heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatment
   unique()
 ```
 
-The heatmaps below show the union of the `r heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["nGenesToPlotEach"]]` most strongly differentially expressed genes (by significance) at each timepoint for each treatment. The expression has been scaled within each gene so that the extreme values for each gene are more readily visible.
+The heatmaps below show the union of the `r heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTreatmentsTimepoints[["nGenesToPlotEach"]]` most strongly differentially expressed genes (by significance) at each timepoint for each treatment. The expression has been scaled within each gene so that the extreme values for each gene are more readily visible.
 
-```{r heatmapSetup2TimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints, dependson=c("heatmapSetup1TimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints", "setupPalettes")}
+```{r heatmapSetup2.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTreatmentsTimepoints, dependson=c("heatmapSetup1.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTreatmentsTimepoints", "setupPalettes")}
 # set up color scheme
-heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["annotationColors"]] <- list()
+heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTreatmentsTimepoints[["annotationColors"]] <- list()
 
-heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["annotationColors"]][["treatment"]] <-
-  palTreatment
+heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTreatmentsTimepoints[["annotationColors"]][["treatment"]] <-
+  pal.treatment
 
-heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["annotationColors"]][["timepoint"]] <-
+heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTreatmentsTimepoints[["annotationColors"]][["timepoint"]] <-
   pal.timepoint
 
-heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["annotationColors"]][["donorId"]] <-
+heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTreatmentsTimepoints[["annotationColors"]][["donorId"]] <-
   pal.donorId
 
 # Determine order of libraries (for use with counts and heatmap annotation)
-heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["libidOrder"]] <-
-  masterTimepointTreatment %>%
+heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTreatmentsTimepoints[["libidOrder"]] <-
+  master.timepointTreatment %>%
   dplyr::arrange(treatment, timepoint, donorId, libid) %>%
   pull(libid)
 
 # Make a column annotation object
-heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["columnAnnotation"]] <-
+heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTreatmentsTimepoints[["columnAnnotation"]] <-
   HeatmapAnnotation(
     name = "Expression",
     df =
-      masterTimepointTreatment[
-        match(heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["libidOrder"]],
-              masterTimepointTreatment$libid),] %>%
-      dplyr::select(
-        treatment,
-        timepoint,
-        donorId) %>%
-      as.data.frame(),
+      master.timepointTreatment[
+        match(heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTreatmentsTimepoints[["libidOrder"]],
+          master.timepointTreatment$libid), ] %>%
+        dplyr::select(
+          treatment,
+          timepoint,
+          donorId) %>%
+        as.data.frame(),
     col = list(
       treatment =
-        heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["annotationColors"]][["treatment"]],
+        heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTreatmentsTimepoints[["annotationColors"]][["treatment"]],
       timepoint =
-        heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["annotationColors"]][["timepoint"]],
+        heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTreatmentsTimepoints[["annotationColors"]][["timepoint"]],
       donorId =
-        heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["annotationColors"]][["donorId"]]),
+        heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTreatmentsTimepoints[["annotationColors"]][["donorId"]]),
     show_legend = c(TRUE, TRUE, TRUE))
 
 # Set up heatmap counts matrix
-heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["countMatrix"]] <-
-  vwtsTimepointTreatment$E[
-    heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["genesToPlot"]],
+heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTreatmentsTimepoints[["countMatrix"]] <-
+  vwts.timepointTreatment$E[
+    heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTreatmentsTimepoints[["genesToPlot"]],
     match(
-      heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["libidOrder"]],
-      colnames(vwtsTimepointTreatment))]
+      heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTreatmentsTimepoints[["libidOrder"]],
+      colnames(vwts.timepointTreatment))]
 
-heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["countMatrixRange01"]] <-
-  heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["countMatrix"]] %>%
-    apply(MARGIN=1, range01) %>%
-    t()
+heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTreatmentsTimepoints[["countMatrix.range01"]] <-
+  heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTreatmentsTimepoints[["countMatrix"]] %>%
+  apply(MARGIN = 1, range01) %>%
+  t()
 ```
 
-```{r heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints, fig.width=8.5, fig.height=5, dependson=c("heatmapSetup2TimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints", "setHeatmapColors")}
-heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints <-
+```{r heatmapSorted.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTreatmentsTimepoints, fig.width=8.5, fig.height=5, dependson=c("heatmapSetup2.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTreatmentsTimepoints", "setHeatmapColors")}
+heatmapSorted.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTreatmentsTimepoints <-
   Heatmap(
-    heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["countMatrixRange01"]],
+    heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTreatmentsTimepoints[["countMatrix.range01"]],
     name = "Expression\n(scaled)",
-    # heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["countMatrix"]],
+    # heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTreatmentsTimepoints[["countMatrix"]],
     # name = "Expression",
     col = heatmap_colors,
     cluster_columns = FALSE,
     show_row_names =
-      length(heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["genesToPlot"]]) <= 50,
+      length(heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTreatmentsTimepoints[["genesToPlot"]]) <= 50,
     row_names_gp = gpar(fontsize = 8),
     show_column_names = FALSE,
     top_annotation =
-      heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["columnAnnotation"]])
+      heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTreatmentsTimepoints[["columnAnnotation"]])
 
-print(heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints)
+print(heatmapSorted.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTreatmentsTimepoints)
 
 pdf(
   file.path(
     dirPlots,
-    paste0("heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints.",
-           filenameSuffix, ".pdf")),
+    paste0("heatmapSorted.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTreatmentsTimepoints.",
+      filenameSuffix, ".pdf")),
   w = 8.5, h = 5)
-print(heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints)
+print(heatmapSorted.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTreatmentsTimepoints)
 invisible(dev.off())
 ```
 
 ### Heatmap of genes differentially expressed vs baseline, with each treatment at each timepoint, showing all timepoints and all treatments
 
-```{r heatmapSetup1TimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments, dependson="limmaTimepointTreatment"}
-heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments <- list()
+```{r heatmapSetup1.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepointsTreatments, dependson="limma.timepointTreatment"}
+heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepointsTreatments <- list()
 
 # set p-value and fold-change cutoffs, and determine genes to plot
-# heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["fc_cut"]] <- 1
-# heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["p_cut"]] <- 0.8
-heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["nGenesToPlotEach"]] <- 15
+# heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepointsTreatments[["fc_cut"]] <- 1
+# heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepointsTreatments[["p_cut"]] <- 0.8
+heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepointsTreatments[["nGenesToPlotEach"]] <- 15
 
-heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["genesToPlot"]] <-
+heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepointsTreatments[["genesToPlot"]] <-
   lapply(
-    topGenesTimepointEachTreatmentByTreatmentTimepoint,
+    topGenes.timepointEachTreatment.byTreatmentTimepoint,
     function(x) {
       lapply(x, function(y) {
         y %>%
-          # dplyr::filter(abs(logFC) > fc_cut.heatmapTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments) %>%
+          # dplyr::filter(abs(logFC) > fc_cut.heatmap.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepointsTreatments) %>%
           dplyr::arrange(P.Value) %>%
-          dplyr::slice(1:heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["nGenesToPlotEach"]]) %>%
+          dplyr::slice(1:heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepointsTreatments[["nGenesToPlotEach"]]) %>%
           pull(gene)
       }) %>%
         unlist()
@@ -1880,88 +3473,88 @@ heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoint
 
 This heatmap is identical to the one above, but has the conditions arranged differently, so that the two treatments are adjacent to each other for each timepoint. This makes it easier to compare the effects of each treatment at each timepoint.
 
-The heatmaps below show the union of the `r heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["nGenesToPlotEach"]]` most strongly differentially expressed genes (by significance) at each timepoint for each treatment. The expression has been scaled within each gene so that the extreme values for each gene are more readily visible.
+The heatmaps below show the union of the `r heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepointsTreatments[["nGenesToPlotEach"]]` most strongly differentially expressed genes (by significance) at each timepoint for each treatment. The expression has been scaled within each gene so that the extreme values for each gene are more readily visible.
 
-```{r heatmapSetup2TimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments, dependson=c("heatmapSetup1TimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments", "setupPalettes")}
+```{r heatmapSetup2.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepointsTreatments, dependson=c("heatmapSetup1.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepointsTreatments", "setupPalettes")}
 # set up color scheme
-heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["annotationColors"]] <- list()
+heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepointsTreatments[["annotationColors"]] <- list()
 
-heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["annotationColors"]][["treatment"]] <-
-  palTreatment
+heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepointsTreatments[["annotationColors"]][["treatment"]] <-
+  pal.treatment
 
-heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["annotationColors"]][["timepoint"]] <-
+heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepointsTreatments[["annotationColors"]][["timepoint"]] <-
   pal.timepoint
 
-heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["annotationColors"]][["donorId"]] <-
+heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepointsTreatments[["annotationColors"]][["donorId"]] <-
   pal.donorId
 
 # Determine order of libraries (for use with counts and heatmap annotation)
-heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["libidOrder"]] <-
-  masterTimepointTreatment %>%
+heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepointsTreatments[["libidOrder"]] <-
+  master.timepointTreatment %>%
   dplyr::arrange(timepoint, treatment, donorId, libid) %>%
   pull(libid)
 
 # Make a column annotation object
-heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["columnAnnotation"]] <-
+heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepointsTreatments[["columnAnnotation"]] <-
   HeatmapAnnotation(
     name = "Expression",
     df =
-      masterTimepointTreatment[
-        match(heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["libidOrder"]],
-              masterTimepointTreatment$libid),] %>%
-      dplyr::select(
-        timepoint,
-        treatment,
-        donorId) %>%
-      as.data.frame(),
+      master.timepointTreatment[
+        match(heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepointsTreatments[["libidOrder"]],
+          master.timepointTreatment$libid), ] %>%
+        dplyr::select(
+          timepoint,
+          treatment,
+          donorId) %>%
+        as.data.frame(),
     col = list(
       timepoint =
-        heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["annotationColors"]][["timepoint"]],
+        heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepointsTreatments[["annotationColors"]][["timepoint"]],
       treatment =
-        heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["annotationColors"]][["treatment"]],
+        heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepointsTreatments[["annotationColors"]][["treatment"]],
       donorId =
-        heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["annotationColors"]][["donorId"]]),
+        heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepointsTreatments[["annotationColors"]][["donorId"]]),
     show_legend = c(TRUE, TRUE, TRUE))
 
 # Set up heatmap counts matrix
-heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["countMatrix"]] <-
-  vwtsTimepointTreatment$E[
-    heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["genesToPlot"]],
+heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepointsTreatments[["countMatrix"]] <-
+  vwts.timepointTreatment$E[
+    heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepointsTreatments[["genesToPlot"]],
     match(
-      heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["libidOrder"]],
-      colnames(vwtsTimepointTreatment))]
+      heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepointsTreatments[["libidOrder"]],
+      colnames(vwts.timepointTreatment))]
 
-heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["countMatrixRange01"]] <-
-  heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["countMatrix"]] %>%
-    apply(MARGIN=1, range01) %>%
-    t()
+heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepointsTreatments[["countMatrix.range01"]] <-
+  heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepointsTreatments[["countMatrix"]] %>%
+  apply(MARGIN = 1, range01) %>%
+  t()
 ```
 
-```{r heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments, fig.width=8.5, fig.height=5, dependson=c("heatmapSetup2TimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments", "setHeatmapColors")}
-heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments <-
+```{r heatmapSorted.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepointsTreatments, fig.width=8.5, fig.height=5, dependson=c("heatmapSetup2.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepointsTreatments", "setHeatmapColors")}
+heatmapSorted.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepointsTreatments <-
   Heatmap(
-    heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["countMatrixRange01"]],
+    heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepointsTreatments[["countMatrix.range01"]],
     name = "Expression\n(scaled)",
-    # heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["countMatrix"]],
+    # heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepointsTreatments[["countMatrix"]],
     # name = "Expression",
     col = heatmap_colors,
     cluster_columns = FALSE,
     show_row_names =
-      length(heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["genesToPlot"]]) <= 50,
+      length(heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepointsTreatments[["genesToPlot"]]) <= 50,
     row_names_gp = gpar(fontsize = 8),
     show_column_names = FALSE,
     top_annotation =
-      heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["columnAnnotation"]])
+      heatmapParams.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepointsTreatments[["columnAnnotation"]])
 
-print(heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments)
+print(heatmapSorted.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepointsTreatments)
 
 pdf(
   file.path(
     dirPlots,
-    paste0("heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments.",
-           filenameSuffix, ".pdf")),
+    paste0("heatmapSorted.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepointsTreatments.",
+      filenameSuffix, ".pdf")),
   w = 8.5, h = 5)
-print(heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments)
+print(heatmapSorted.timepointEachTreatment.byTreatmentTimepoint.genesEachShowAllTimepointsTreatments)
 invisible(dev.off())
 ```
 
@@ -1971,8 +3564,50 @@ invisible(dev.off())
 We also want to know how the expression differences from baseline at each timepoint compare between the treatments. However, because we have only a single baseline sample to compare each treatment to, this is exactly the same as directly comparing the two treatments to each other at each timepoint. To understand this, imagine we are comparing the change from baseline to 5h timepoint with harmine, vs. the change from baseline to 5h timepoint without harmine. We will call the values for harmine H5 and H0, and the values for no harmine N5 and N0. So the difference in the effect would be (H5-H0) - (N5-N0). However, because we have a single baseline value, H0 = N0. So now our difference is (H5-H0) - (N5-H0), or simply H5-N5.
 
 
+# Write out data for downstream analyses
+
+```{r write_out_data_for_downstream_analyses, cache=FALSE, eval=FALSE}
+save(
+  file =
+    file.path(
+      dataDirSaved, paste0(filenameSuffix, ".data_for_downstream_use.RData")),
+  list = c(
+    "annotation",
+    "design", "designQc",
+    "counts", "countsQc", "countsPc",
+    "countsPcFilteredNorm",
+    ls_grep("pal"),
+    "pca", "pdatscores",
+    ls_grep("master"),
+    ls_grep("vwts"),
+    ls_grep("vfit"),
+    ls_grep("topGenes")))
+```
+
+```{r write_out_data_for_combined_analyses, cache=FALSE, eval=FALSE}
+object_list_for_combined_analyses <-
+  unique(
+    c("rnaseqAnnotation",
+      "design", "designQc",
+      "counts", "countsQc", "countsPc",
+      "countsPcFilteredNorm",
+      "log2CountsPcFilteredNorm",
+      ls_grep("pal"),
+      "pca", "pdatscores",
+      ls_grep("master"),
+      # ls_grep("vwts"),
+      # ls_grep("vfit"),
+      ls_grep("topGenes")))
+
+save(
+  file =
+    file.path(
+      dataDirSaved, paste0(filenameSuffix, ".data_for_combined_analyses.RData")),
+  list = object_list_for_combined_analyses)
+```
+
 # Output R session information
 
-```{r outputSessionInfo, cache=FALSE}
+```{r output_session_info, cache=FALSE}
 miscHelpers::print_session_info()
 ```

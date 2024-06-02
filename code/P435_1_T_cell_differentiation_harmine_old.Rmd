@@ -1,0 +1,1978 @@
+---
+title: "P435: T cell differentiation with Dyrk1a inhibition by harmine"
+author: "Matt Dufort"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 5
+    df_print: paged
+editor_options: 
+  chunk_output_type: console
+---
+
+<style type="text/css">
+body{ /* Normal  */
+      font-size: 14px;
+  }
+h1 { /* Header 1 */
+  font-size: 28px;
+}
+h2 { /* Header 2 */
+    font-size: 24px;
+}
+h3 { /* Header 3 */
+  font-size: 20px;
+}
+h4 { /* Header 4 */
+  font-size: 16px;
+}
+</style>
+
+# Project Summary
+
+This project includes RNAseq of mouse CD4+ T cells differentiated under different conditions. Samples were collected at specific time intervals, from cells differentiated with and without harmine. Harmine inhibits Dyrk1a, and skews T cell differentiation away from Th17 and toward Treg. There are 4 replicates for each condition at each timepoint.
+
+The primary questions are\
+1) What genes differ between the two conditions at each timepoint?\
+2) How does gene expression change throughout the timecourse in each condition, and how does this differ between the two conditions?
+
+```{r setup, echo=FALSE, message=FALSE, warning=FALSE, cache=FALSE}
+library(knitr)
+library(tidyverse)
+
+library(ggthemes)
+library(edgeR)
+library(RColorBrewer)
+library(kableExtra)
+library(viridis)
+
+library(ComplexHeatmap)
+library(limma)
+library(data.table)
+
+library(bRi)
+library(miscHelpers)
+library(RNAseQC)
+library(countSubsetNorm)
+
+library(magrittr)
+opts_chunk$set(
+  fig.width = 6, fig.height = 4.25, cache = TRUE,
+  echo = FALSE, warning = FALSE, message = FALSE)
+options(stringsAsFactors = FALSE)
+
+theme_set(
+  theme_bw(20) +
+    theme(panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          panel.border = element_rect(color = "black", fill = NA, size = 1),
+          axis.text = element_text(color = "black"),
+          axis.ticks = element_line(color = "black"),
+          axis.text.x = element_text(angle = 0)))
+update_geom_defaults("point", list(shape = 16))
+grDevices::pdf.options(useDingbats = FALSE)
+```
+
+```{r setFilenamesAndGlobalVariables}
+# set up directories
+dirRoot <-
+  file.path(
+    "~",
+    "Box", "Projects", # Box version
+    # "Documents", "Projects_local", # local version
+    "P435_Tcell_differentiation_Khor")
+dirPlots <- file.path("plots")
+dirDataSaved <- file.path("data_saved")
+
+dataDate <- "2022-02-10"
+filenameSuffix <- paste0("P435_1_T_cell_differentiation_harmine.", dataDate)
+
+projectNumberGenomicsCore <- "P435-1"
+```
+
+```{r setDirectory, cache=FALSE}
+opts_knit$set(root.dir = dirRoot)
+setwd(dirRoot)
+
+if (!dir.exists(dirPlots)) dir.create(dirPlots)
+if (!dir.exists(dirDataSaved)) dir.create(dirDataSaved)
+```
+
+# Load project data
+
+## Load project info and libraries
+
+```{r getProjectInfo, dependson="setFilenamesAndGlobalVariables"}
+filenameProjectInfo <-
+  file.path(dirDataSaved, paste("projectInfo", filenameSuffix, "RDS", sep = "."))
+  
+# check for local version of project info
+if (file.exists(filenameProjectInfo)) {
+  projectInfo <- readRDS(filenameProjectInfo)
+} else {
+  # read in projectInfo from ResearchDB
+  projectInfo <- apird::getGcqProjectInfo(projectNumberGenomicsCore)
+  
+  # save local copy
+  saveRDS(projectInfo, file = filenameProjectInfo)
+}
+
+projectInfo <-
+  projectInfo %>%
+  dplyr::rename(project = projName) %>%
+  # dplyr::filter(
+  #   str_detect(project, file_name_input_regex),
+  #   !str_detect(project, file_name_input_regex_exclude)) %>% # filter sub-projects
+  mutate(
+    project =
+      factor(project,
+             levels = str_sort(unique(project), numeric = TRUE))) %>%
+  dplyr::arrange(project)
+```
+
+```{r getProjectLibs, dependson="getProjectInfo"}
+filenameProjectLibs <-
+  file.path(dirDataSaved, paste("projectLibs", filenameSuffix, "RDS", sep = "."))
+  
+# check for local version of project info
+if (file.exists(filenameProjectLibs)) {
+  projectLibs <- readRDS(filenameProjectLibs)
+} else {
+  # read in projectLibs from ResearchDB and convert to data frame
+  if (length(projectInfo$project) == 1) {
+    projectLibs <-
+      apird::getProjectLibs(projectInfo$project)
+    projectLibs <-
+      data.frame(
+        project =
+          rep(projectInfo$project, times = length(projectLibs)),
+        libid = projectLibs)
+  } else if (length(projectInfo$project) > 1) {
+    projectLibs <-
+      sapply(as.character(projectInfo$project), apird::getProjectLibs)
+    projectLibs <-
+      data.frame(
+        project = rep(names(projectLibs), times = sapply(projectLibs, length)),
+        libid = unlist(projectLibs))
+  }
+  
+  projectLibs <-
+    projectLibs %>%
+    mutate(
+      project =
+        factor(project,
+               levels = str_sort(unique(project), numeric = TRUE))) %>%
+    dplyr::arrange(project, libid)
+  
+  # save local copy
+  saveRDS(projectLibs, file = filenameProjectLibs)
+}
+```
+
+## Load metrics
+
+```{r loadMetrics, dependson="getProjectLibs"}
+filenameMetrics <-
+  file.path(dirDataSaved, paste("metrics", filenameSuffix, "RDS", sep = "."))
+
+# check for local version of metrics
+if (file.exists(filenameMetrics)) {
+  metrics <- readRDS(filenameMetrics)
+} else {
+  # read in metrics from ResearchDB
+  metrics <-
+    apird::getMetrics(projectLibs$libid) %>%
+    dplyr::arrange(libid_fcid)
+  
+  # save local copy
+  saveRDS(metrics, file = filenameMetrics)
+}
+
+metrics <-
+  metrics %>%
+  mutate(
+    libid = str_extract(libid_fcid, "^lib[0-9]+")) %>%
+  merge(projectLibs, by = "libid") %>%
+  dplyr::arrange(project, libid)
+```
+
+## Load sample annotation
+
+```{r loadRnaseqAnnotation, results="hide", dependson="getProjectLibs"}
+### read in library-level annotation
+filenameRnaseqAnnotation <-
+  file.path(
+    dirDataSaved,
+    paste("rnaseqAnnotation", filenameSuffix, "RDS", sep = "."))
+
+# check for local version of rnaseqAnnotation
+if (file.exists(filenameRnaseqAnnotation)) {
+  rnaseqAnnotation <- readRDS(filenameRnaseqAnnotation)
+} else {
+  # read in rnaseqAnnotation from ResearchDB
+  rnaseqAnnotation <-
+    apird::getAnno(projectLibs$libid) %>%
+    mutate( # make project a factor, sorted properly
+      project =
+        project %>%
+        factor(levels = str_sort(unique(project), numeric = TRUE))) %>%
+    dplyr::arrange(project, libid)
+  
+  # save local copy
+  saveRDS(rnaseqAnnotation, file = filenameRnaseqAnnotation)
+}
+```
+
+```{r cleanRnaseqAnnotation, results="hide", dependson="loadRnaseqAnnotation"}
+## this set of commands cleans up the messy rnaseqAnnotation data
+rnaseqAnnotation <-
+  rnaseqAnnotation %>%
+  coerce_NA_text() %>%
+  remove_all_NA_rowcols() %>%
+  dplyr::rename(
+    sex = sexAge,
+    timepoint = timePoint) %>%
+  mutate(
+    dateCollected = standardize_dates(dateCollected),
+    dateCreated = standardize_dates(dateCreated),
+    dateUpdated = standardize_dates(dateUpdated),
+    timepointHours = 
+      timepoint %>%
+      str_extract("^[0-9]+") %>% 
+      as.numeric(),
+    timepoint =
+      timepoint %>%
+      factor(levels = str_sort(unique(.), numeric = TRUE)),
+    stimulation =
+      stimulation %>%
+      factor(levels = c("none", "Il-6, Il-1B, anti-Il-4, anti-Il-12, anti-IFNg, TGFb")),
+    treatment =
+      treatment %>%
+      factor(levels = c("none", "10uM Harmine")))
+```
+
+```{r combineAnnotationMetrics, results="hide", dependson=c("loadMetrics", "cleanRnaseqAnnotation")}
+## combine library annotation, sample annotation, metrics into single object
+design <-
+  rnaseqAnnotation %>%
+  dplyr::select(
+    project, donorId, stimulation, treatment, sex, everything()) %>%
+  left_join(metrics) %>%
+  droplevels() %>%
+  dplyr::arrange(project, libid)
+```
+
+```{r setHeatmapColors}
+heatmap_colors <-
+  colorRampPalette(rev(RColorBrewer::brewer.pal(9, "RdBu")))(101) # blue - white - red
+```
+
+### Tables of sample numbers by stimulation, treatment, and timepoint
+
+It's helpful to verify that we have the expected number of samples for each set of conditions
+
+```{r outputTableStimulationTreatment, dependson="cleanRnaseqAnnotation"}
+tableStimulationTreatment <-
+  rnaseqAnnotation %>%
+  dplyr::select(stimulation, treatment) %>%
+  table()
+
+tableStimulationTreatment %>%
+  kable() %>%
+  kable_styling(full_width = FALSE)
+```
+
+Looks good! 16 replicates for each treatment with the differentiation treatment, plus 4 replicates of the untreated baseline condition.
+
+Similarly, we want to verify that we have the expected number of samples from each treatment at each timepoint.
+
+```{r outputTableTimepointTreatment, dependson="cleanRnaseqAnnotation"}
+tableTimepointTreatment <-
+  rnaseqAnnotation %>%
+  dplyr::select(timepoint, treatment) %>%
+  table()
+
+tableTimepointTreatment %>%
+  kable() %>%
+  kable_styling(full_width = FALSE)
+```
+
+This looks exactly as expected - 4 samples at for each treatment at each timepoint, except the baseline timepoint where there are only samples from the "none" treatment.
+
+## Generate color palettes for downstream use
+
+```{r setupPalettes, dependson=c("combineAnnotationMetrics", "loadPalettesAndSettings")}
+# generate palette for stimulation
+palStimulation <-
+  big_colorblind_pal(length(levels(design$stimulation))) %>%
+  set_names(levels(design$stimulation))
+
+# generate palette for treatment
+palTreatment <-
+  big_colorblind_pal(length(levels(design$treatment))) %>%
+  set_names(levels(design$treatment))
+shapePal.treatment <-
+  c(16, 17) %>%
+  setNames(levels(design$treatment))
+
+# generate palette for timepoint
+pal.timepoint <-
+  c("black", RColorBrewer::brewer.pal(length(levels(design$timepoint)), "Blues")[-1]) %>%
+  set_names(levels(design$timepoint))
+
+# generate palette for donorId (mouse)
+pal.donorId <-
+  big_colorblind_pal(
+    n_distinct(design$donorId),
+    shuffle_colors = FALSE,
+    drop_yellow = TRUE, drop_black = TRUE) %>%
+  setNames(
+    sort(unique(design$donorId)))
+
+# generate palette for sex
+pal.sex <-
+  c("F"="orange", "M"="blue")
+
+# color palette for plotting gene counts, e.g. on tSNE and UMAP plots
+cols.geneCounts <- c("gray90", "darkred")
+cols.geneCountsDiverging <- c("blue", "gray90", "red")
+
+# set default resolution for raster layers
+rasterResolutionDpi <- 300
+```
+
+## Load counts
+
+```{r loadCounts, dependson="getProjectLibs"}
+# set counts filename
+filenameCounts <-
+  file.path(dirDataSaved, paste("countsRaw", filenameSuffix, "RDS", sep = "."))
+
+# check for counts already downloaed
+if (file.exists(filenameCounts)) {
+  counts <- readRDS(filenameCounts)
+} else {
+  counts <- apird::getGeneCounts(projectLibs$libid)
+  counts <- counts[order(rownames(counts)),]
+  
+  saveRDS(counts, file = filenameCounts)
+}
+
+# convert to standard counts object format
+counts <-
+  counts %>%
+  t() %>%
+  as.data.frame() %>%
+  magrittr::set_colnames(
+    colnames(.) %>% str_extract("^lib[0-9]+"))
+```
+
+```{r enforceLibraryMatchingAndOrder, results='hide', dependson=c("combine_annotation_metrics", "loadCounts")}
+# check for libraries found in count but not annotation, and vice versa
+# in this case we are excluding some libraries from design, so we know we need to drop them from counts
+counts <- counts[, colnames(counts) %in% design$libid]
+stopifnot(setequal(colnames(counts), design$libid))
+
+# make sure libraries in counts and metrics are in the same order
+design <- design[design$libid %in% colnames(counts),]
+counts <- counts[, match(design$libid, colnames(counts))]
+stopifnot(identical(colnames(counts), design$libid))
+```
+
+# RNAseq Quality Control
+
+## Quality control by sequencing and alignment metrics
+
+```{r setQcCuts}
+# set QC thresholds
+qcCuts <-
+  c("pct_aligned" = 80,
+    "fastq_total_reads" = 2.5,
+    "median_cv_coverage" = 1)
+```
+
+Plots of selected library quality metrics are shown below   
+
+1. The total number of reads in each library (higher is better)   
+
+2. The percent alignment of each library (higher is better)   
+
+3. Median CV coverage. This is the the median coefficient of variation of coverage of the 1000 most highly expressed transcripts. It measures read bias along the transcript. Ideally, this value would be 0. For bulk RNAseq, libraries with values of up to 1 are considered high quality.
+
+4. Percent duplication. The percent of reads in each library that are duplicates. High percent duplication values indicate that many of the reads are not unique and that shallower sequencing could have been used to capture the same amount of information. 
+
+
+### Plot read counts 
+
+First, by donorId:
+
+```{r qcPlotReadCountsColorByDonorId, dependson=c("enforceLibraryMatchingAndOrder", "setupPalettes", "setQcCuts"), fig.width=8.5, fig.height=4.25}
+ggplot(
+  design %>%
+    dplyr::arrange(fastq_total_reads/1E6) %>%
+    mutate(libidOrder = 1:nrow(.)),
+  mapping = aes(x = libidOrder, y = fastq_total_reads/1E6, fill = donorId)) +
+  geom_bar(stat="identity", color = NA) +
+  geom_hline(yintercept = qcCuts["fastq_total_reads"]) +
+  scale_fill_manual(values = pal.donorId) +
+  labs(x = "library", y = "total reads (millions)")
+```
+
+Next, by timepoint:
+
+```{r qcPlotReadCountsColorByTimepoint, dependson=c("enforceLibraryMatchingAndOrder", "setupPalettes", "setQcCuts"), fig.width=7.8, fig.height=4.25}
+ggplot(
+  design %>%
+    dplyr::arrange(fastq_total_reads/1E6) %>%
+    mutate(libidOrder = 1:nrow(.)),
+  mapping = aes(x = libidOrder, y = fastq_total_reads/1E6, fill = timepoint)) +
+  geom_bar(stat="identity", color = NA) +
+  geom_hline(yintercept = qcCuts["fastq_total_reads"]) +
+  scale_fill_manual(values = pal.timepoint) +
+  labs(x = "library", y = "total reads (millions)")
+```
+
+Next, by treatment:
+
+```{r qcPlotReadCountsColorByTreatment, dependson=c("enforceLibraryMatchingAndOrder", "setupPalettes", "setQcCuts"), fig.width=8, fig.height=4.25}
+ggplot(
+  design %>%
+    dplyr::arrange(fastq_total_reads/1E6) %>%
+    mutate(libidOrder = 1:nrow(.)),
+  mapping = aes(x = libidOrder, y = fastq_total_reads/1E6, fill = treatment)) +
+  geom_bar(stat="identity", color = NA) +
+  geom_hline(yintercept = qcCuts["fastq_total_reads"]) +
+  scale_fill_manual(values = palTreatment) +
+  labs(x = "library", y = "total reads (millions)")
+```
+
+These all look good, though it does appear that read counts were higher for earlier timepoints. This may be related to dilution, as the annotation data show the RNA concentration and quantity were higher for samples from later timepoints.
+
+### Plot percent alignment vs. median CV of coverage
+
+By donorId:
+
+```{r qcPlotPctAlignedVsMedianCvCoverageColorByDonorId, dependson=c("enforceLibraryMatchingAndOrder", "setupPalettes", "setQcCuts"), fig.width=7, fig.height=4.25}
+ggplot(
+  design,
+  mapping = aes(x = median_cv_coverage, y = pct_aligned, color = donorId)) +
+  geom_point(alpha = 0.8) +
+  geom_vline(xintercept = qcCuts["median_cv_coverage"], linetype = "dashed") +
+  geom_hline(yintercept = qcCuts["pct_aligned"], linetype = "dashed") +
+  scale_color_manual(values = pal.donorId) +
+  labs(x = "Median CV of gene coverage", y = "Percent of reads aligned") +
+  guides(color = guide_legend(override.aes = list(size = 4, alpha = 1)))
+```
+
+By timepoint:
+
+```{r qcPlotPctAlignedVsMedianCvCoverageColorByTimepoint, dependson=c("enforceLibraryMatchingAndOrder", "setupPalettes", "setQcCuts"), fig.width=6.5, fig.height=4.25}
+ggplot(
+  design,
+  mapping = aes(x = median_cv_coverage, y = pct_aligned, color = timepoint)) +
+  geom_point(alpha = 0.8) +
+  geom_vline(xintercept = qcCuts["median_cv_coverage"], linetype = "dashed") +
+  geom_hline(yintercept = qcCuts["pct_aligned"], linetype = "dashed") +
+  scale_color_manual(values = pal.timepoint) +
+  labs(x = "Median CV of gene coverage", y = "Percent of reads aligned") +
+  guides(color = guide_legend(override.aes = list(size = 4, alpha = 1)))
+```
+
+Looks great! All samples are very high quality. As suggested in the read count plots, it does appear that the later timepoints generally yielded slightly lower quality data. Perhaps this indicates that the cells declined in condition during the culture / differentiation process.
+
+### Make QC cuts
+
+```{r applyQcCuts, dependson=c("enforceLibraryMatchingAndOrder", "setQcCuts")}
+design <-
+  design %>%
+  mutate(
+    qc_pass =
+      (fastq_total_reads > (qcCuts["fastq_total_reads"]*1E6)) &
+      (pct_aligned > qcCuts["pct_aligned"]) & # check the numbers (decimal vs. percent)
+      (median_cv_coverage < qcCuts["median_cv_coverage"]))
+
+designQc <- design %>% dplyr::filter(qc_pass ==TRUE)
+
+# filter counts object and make sure it's in the same order as designQc
+countsQc <- counts[, match(designQc$libid, colnames(counts))]
+```
+
+If quality control cuts of at least `r qcCuts["fastq_total_reads"]` million total reads, `r (qcCuts["pct_aligned"])`% alignment, and median cv coverage of less than `r qcCuts["median_cv_coverage"]` are made, `r nrow(designQc)` of the original `r nrow(design)` libraries meet our standards for high-quality data.
+
+## Check sample validity by sex chromosome gene expression, kinship comparison, and treatment/timepoint PCA
+
+### Check sex chromosome gene expression
+
+We can verify sample identity by quantifying expression of genes on the X and Y chromosomes.
+
+First, we infer donor sex based on the read counts from X and Y chromosome genes. We can then check that all samples from the same donor have the same inferred sex, and check the the sex inferred from the RNAseq reads matches the donor sex in the annotation.
+
+```{r inferSexByRna, dependson="applyQcCuts"}
+## infer sex based on RNA-seq reads
+designQc$logXyRatio <-
+  logXYratio(countsQc, gene_ID = "ensgene", species = "mouse")
+# plot histogram, and use it to determine break point
+
+xyThreshold <- 7
+
+designQc$sexByRna <-
+  ifelse(designQc$logXyRatio >= xyThreshold, "F", "M") %>%
+  factor(levels = c("F", "M"))
+```
+
+```{r plotLogXyRatio, dependson="inferSexByRna", fig.width=7.25, fig.height=4.25}
+ggplot(
+  designQc,
+  mapping = aes(x = logXyRatio, fill = sex)) +
+  geom_histogram(color = "black", position = "dodge") +
+  geom_vline(xintercept = xyThreshold, linetype = "dashed") +
+  labs(x = "log ratio of X to Y chromosome reads") +
+  scale_fill_manual("sex\n(reported)", values = pal.sex, na.value = "gray60")
+```
+
+Based on the plot above, we will use a threshold of `r xyThreshold` to infer donor sex. The plot looks good, with all samples falling clearly on the male side of the threshold, and no samples that appear incorrectly annotated.
+
+```{r checkSexInferredVsAnnotated, dependson="inferSexByRna"}
+libidMismatchedSex <-
+  designQc %>%
+  dplyr::select(libid, donorId, sexByRna, sex) %>%
+  dplyr::filter(sexByRna != sex) %>%
+  dplyr::pull(libid)
+
+subjectMultipleSex <-
+  designQc %>%
+  dplyr::select(sexByRna, donorId) %>%
+  table() %>%
+  magrittr::is_greater_than(0) %>%
+  colSums() %>%
+  magrittr::is_greater_than(1) %>%
+  which() %>%
+  names()
+```
+
+Fortunately, `r length(libidMismatchedSex)` libraries have mis-matches between the sex inferred from the RNAseq reads and the annotated sex. That corresponds to `r length(subjectMultipleSex)` of the subjects having libraries that appear to derive from people with different sex. 
+
+```{r table_mismatched_sex_by_libid, dependson="checkSexInferredVsAnnotated", results="asis", eval=FALSE}
+designQc %>%
+  dplyr::filter(libid %in% libidMismatchedSex) %>%
+  dplyr::select(
+    libid, donorId, sex, sexByRna,
+    logXyRatio, stimulation, treatment, timepoint,
+    total_reads_aligned = fastq_total_reads,
+    median_cv_coverage, pct_aligned) %>%
+  dplyr::arrange(donorId, treatment) %>%
+  kable() %>%
+  kable_styling() %>%
+  scroll_box(width = "5.5in")
+```
+
+### SNP-based kinship values
+
+The second, more specific, approach we can use is comparisons of SNPs called from RNA-seq reads.
+
+We have not done this for P435-1. However, if we see any reason to suspect that the samples are mixed up, we will do so.
+
+### Treatment and timepoint on PCA
+
+The samples in P435-1 include 2 different treatments and 5 different timepoints, which we expect to drive most of the variation in the data. This allows us to use one additional data check - we can verify that samples from the same treatment / timepoint appear near each other in PCA space.
+
+```{r filterNormalizeGenes, dependson=c("applyQcCuts", "inferSexByRna")}
+# Keep protein coding genes with HGNC symbols, and drop non-protein-coding genes
+counts.tmp <-
+  countsQc %>%
+  tibble::rownames_to_column("ensgene") %>%
+  left_join(
+    grcm38 %>%
+      dplyr::filter(
+        (biotype %in% "protein_coding") |
+          str_detect(biotype, "^(IG|TR)_(C|V|D|J|LV)_gene$")) %>%
+      dplyr::select(ensgene, gene = symbol)) %>%
+  dplyr::select(-ensgene) %>%
+  # dplyr::select(gene, everything()) %>%
+  as.data.table()
+
+## use data.table to aggregate/sum counts for duplicated HGNC symbols (way faster than stats::aggregate)
+# this also drops rows with HGNC.symbols == NA, which should include any non-protein-coding genes
+countsPc <-
+  counts.tmp[
+    , lapply(.SD, sum), by = gene,
+    .SDcols = grep("^lib", colnames(counts.tmp), value = TRUE)] %>%
+  arrange(gene) %>%
+  dplyr::filter(gene != "MTRNR2L1") %>% # exclude MTRNR2L1
+  as.data.frame() %>%
+  magrittr::set_rownames(., value = .$gene)
+countsPc <- countsPc[, -which(colnames(countsPc) == "gene")]
+# dim(countsPc)
+# 22283 genes, 37 libraries
+
+# filter lowly expressed genes
+# counts_all_filtered <- gene_filter(counts_hgnc, 0.10)
+countsPcFilteredNorm <-
+  calc_norm_counts(
+    countsPc, design = designQc, libID_col = "libid",
+    min_cpm = 1, min_libs_perc = 0.1,
+    normalize = TRUE, log2_transform = FALSE)
+
+log2CountsPcFilteredNorm <-
+  calc_norm_counts(
+    countsPc, design=designQc, libID_col = "libid",
+    min_cpm = 1, min_libs_perc = 0.1,
+    normalize = TRUE, return_DGEcounts = TRUE) %>%
+    voom() %>%
+  `[[`("E")
+
+rm_tmp(ask = FALSE)
+```
+
+```{r writeOutCountsPcFilteredNorm, dependson="filterNormalizeGenes"}
+data.tmp <- log2CountsPcFilteredNorm
+colnames(data.tmp) <-
+  with(design[match(colnames(data.tmp), design$libid),],
+       paste(timepoint, treatment, donorId, sep = "_") %>%
+         str_replace_all(" ", "_"))
+data.tmp %>%
+  write.csv(
+    file.path(
+      "data_output",
+      paste0("P435-1_counts_filtered_normalized_log_transformed.",
+             filenameSuffix, ".csv")))
+
+rm_tmp(ask = FALSE)
+```
+
+```{r runPca, dependson="filterNormalizeGenes"}
+# run PCA on the normalized log2 transformed counts data
+pca <- calc_PCAs(countsPcFilteredNorm, log2_transform = TRUE)
+
+# get PCA results and merge with sample information stored in metrics
+pdatscores <-
+  merge(designQc,
+        as.data.frame(pca$x),
+        by.x = "libid", by.y = "row.names")
+```
+
+```{r pcaCorrelations, dependson="runPca"}
+# calculate correlations of experimental variables with PCs
+pcaCorrelations <-
+    calc_PCcors(pca, annotation = designQc, PCs = 1:20)
+# pcaCorrelations["PC1",] %>% sort()
+# pcaCorrelations[
+#   order(abs(pcaCorrelations[,"timepoint"]), decreasing = TRUE),
+#   "timepoint"] %>%
+#   kable() %>%
+#   kable_styling()
+```
+
+The plots below show samples on PCs 1 and 2, and on PC2 vs. PC3 where they show the most separation by treatment
+
+```{r pcaPlotPc1Pc2ByTreatment, fig.width=7.5, fig.height=5, dependson=c("runPca", "setupPalettes")}
+PCs.tmp <- c("PC1", "PC2")
+ggplot(
+  pdatscores,
+  aes_string(x = PCs.tmp[1], y = PCs.tmp[2], color = "treatment")) + 
+  geom_point(size = 3) +
+  labs(
+    x = pca$pvars.labs[
+      as.numeric(str_extract(PCs.tmp[1], "(?<=PC)[0-9]+"))],
+    y = pca$pvars.labs[
+      as.numeric(str_extract(PCs.tmp[2], "(?<=PC)[0-9]+"))]) +
+  scale_color_manual(values = palTreatment)
+
+rm_tmp(ask = FALSE)
+```
+
+```{r pcaPlotPc4Pc5ByTreatment, fig.width=7.5, fig.height=5, dependson=c("runPca", "setupPalettes")}
+PCs.tmp <- c("PC4", "PC5")
+ggplot(
+  pdatscores,
+  aes_string(x = PCs.tmp[1], y = PCs.tmp[2], color = "treatment")) + 
+  geom_point(size = 3) +
+  labs(
+    x = pca$pvars.labs[
+      as.numeric(str_extract(PCs.tmp[1], "(?<=PC)[0-9]+"))],
+    y = pca$pvars.labs[
+      as.numeric(str_extract(PCs.tmp[2], "(?<=PC)[0-9]+"))]) +
+  scale_color_manual(values = palTreatment)
+
+rm_tmp(ask = FALSE)
+```
+
+The samples separate well by treatment, although there appears to be more separation by timepoint.
+
+We can visualize this on these sames PCs. We color the points by timepoint, and use different shapes for the treatments.
+
+```{r pcaPlotPc1Pc2ColorByTimepointShapeByTreatment, fig.width=7.75, fig.height=5, dependson=c("runPca", "setupPalettes")}
+PCs.tmp <- c("PC1", "PC2")
+ggplot(
+  pdatscores,
+  aes_string(
+    x = PCs.tmp[1], y = PCs.tmp[2],
+    color = "timepoint", fill = "timepoint", shape = "treatment")) + 
+  geom_point(size = 3) +
+  labs(
+    x = pca$pvars.labs[
+      as.numeric(str_extract(PCs.tmp[1], "(?<=PC)[0-9]+"))],
+    y = pca$pvars.labs[
+      as.numeric(str_extract(PCs.tmp[2], "(?<=PC)[0-9]+"))]) +
+  scale_color_manual(values = pal.timepoint) +
+  scale_fill_manual(values = pal.timepoint) +
+  scale_shape_manual(values = shapePal.treatment)
+
+rm_tmp(ask = FALSE)
+```
+
+```{r pcaPlotPc4Pc5ColorByTimepointShapeByTreatment, fig.width=7.75, fig.height=5, dependson=c("runPca", "setupPalettes")}
+PCs.tmp <- c("PC4", "PC5")
+ggplot(
+  pdatscores,
+  aes_string(
+    x = PCs.tmp[1], y = PCs.tmp[2],
+    color = "timepoint", fill = "timepoint", shape = "treatment")) + 
+  geom_point(size = 3) +
+  labs(
+    x = pca$pvars.labs[
+      as.numeric(str_extract(PCs.tmp[1], "(?<=PC)[0-9]+"))],
+    y = pca$pvars.labs[
+      as.numeric(str_extract(PCs.tmp[2], "(?<=PC)[0-9]+"))]) +
+  scale_color_manual(values = pal.timepoint) +
+  scale_fill_manual(values = pal.timepoint) +
+  scale_shape_manual(values = shapePal.treatment)
+
+rm_tmp(ask = FALSE)
+```
+
+The clustering of these samples in PCA space by the expected variables (treatment and timepoint) indicate that the samples are accurately annotated.
+
+# Gene count saturation, filtering, and normalization
+
+In the following steps, we will filter and normalize the gene counts.
+
+## Filter to protein-coding genes
+
+We first restrict the counts to only protein-coding genes. We do this primarily because interpretation of non-protein-coding genes is much more difficult due to lack of information. Keeping them would require a more stringent adjustment for multiple tests across genes, reducing power.
+
+## Sequencing saturation plots
+
+One of the most helpful plots for understanding the success of sequencing is a saturation plot. This type of plot shows the number of genes that were detected, or would have been detected, at a certain depth of sequencing. It can tell us about the complexity of our RNAseq libraries, whether our sequencing was deep enough to capture that complexity, and how that varies across libraries.
+
+Ideally, we would see each library approaching an asymptote in the number of genes detected as the sequencing depth approaches the actual final depth. To make it easier to see any differences, we will generate separate plots for each sub-project, all on the same scale, with each plot showing the values for all libraries from that sub-project.
+
+```{r estimateSaturation, dependson="filterNormalizeGenes", results="hide"}
+filenameSaturationPc <-
+  file.path(dirDataSaved, 
+            paste("saturationPc", filenameSuffix, "RDS", sep = "."))
+if (file.exists(filenameSaturationPc)) {
+  saturationPc <- readRDS(filenameSaturationPc)
+} else {
+  saturationPc <-
+    estimate_saturation(
+      countsPc, method = "sampling", ndepths = 10, min_counts = 1, verbose = TRUE)
+  saveRDS(saturationPc, file = filenameSaturationPc)
+}
+```
+
+```{r estimateSaturationMinCpm, dependson="filterNormalizeGenes", results="hide"}
+filenameSaturationPcMinCpm <-
+  file.path(dirDataSaved,
+            paste("saturationPcMinCpm", filenameSuffix, "RDS", sep = "."))
+if (file.exists(filenameSaturationPcMinCpm)) {
+  saturationPcMinCpm <- readRDS(filenameSaturationPcMinCpm)
+} else {
+  saturationPcMinCpm <-
+    estimate_saturation(
+      countsPc, method = "sampling",
+      ndepths = 10, min_counts = NULL, min_cpm = 0.1,
+      verbose = TRUE)
+  saveRDS(saturationPcMinCpm, file = filenameSaturationPcMinCpm)
+}
+```
+
+```{r plotSaturation, fig.width=10, fig.height=6, dependson=c("estimateSaturation", "estimateSaturationMinCpm", "inferSexByRna", "applyQcCuts")}
+ggplot(
+  saturationPcMinCpm %>%
+    dplyr::rename(libid = sample) %>%
+    right_join(designQc %>% dplyr::select(libid, timepoint)),
+  mapping = aes(x = depth, y = sat, group = libid, color = timepoint)) +
+  geom_path(size = 0.5, alpha = 0.7) +
+  scale_color_manual(values = pal.timepoint) +
+  # coord_cartesian(xlim = c(0, 1100000), ylim = c(0, 5400)) +
+  # scale_x_continuous(
+  #   breaks = seq(0, 1000000, length.out = 5), 
+  #   labels = seq(0, 1000000, length.out = 5) / 1000000) +
+  labs(x = "Aligned reads (millions)", y = "Estimated genes detected")
+```
+
+From the plots above, all of the libraries do appear to reach saturation, as indicated by the lines flattening out well before they end. And most of them reach saturation by about 2M reads (though note that this is *aligned* reads, not total reads). And most of them have numbers of genes detected in the same general range (10,000-12,000).
+
+## Gene expression filtering
+
+A filter is applied to keep only genes with HGNC symbols that have been annotated as protein coding. This filter keeps `r nrow(countsPc)` of `r nrow(countsQc)` genes. A second filter that selects genes with a count per million reads of at least one in 10% of libraries is also applied. This keeps `r nrow(countsPcFilteredNorm)` of the `r nrow(countsPc)` genes from the first filter. Filtered counts are normalized using the cell pool deconvolution algorithm.
+
+
+# Principal Component Analysis
+
+Principal component analysis (PCA) is used to describe variation in a dataset. We used it above to determine whether the samples treated with and without harmine were similar to each other. The goal is to take a dataset which depends on many different variables, some of which may be correlated and come up with a smaller set of variables that can be used to explain the data. PCA transforms the expression data (gene counts) into a set of linearly uncorrelated variables such that the first principal component (PC1) accounts for as much variation in the data as possible and subsequent principal components (PC2, PC3, etc) explain as much variation as possible under the condition that the they be uncorrelated with the first principal component. 
+
+## Run PCA
+
+## Correlations of PCs with other variables
+
+To determine which variables are associated with the greatest variation among libraries, we calculate the correlation of each variable with each of the first 20 PC axes. The heatmap below shows those correlation values. With the addition of the CyTOF data, we need to split the plot into two pieces to make it more readable.
+
+```{r plotPcaCorrelationHeatmap, dependson="pcaCorrelations", fig.width=10, fig.height=8}
+nPlots.tmp <- 1 # split the heatmap into this many separate plots
+colCutVector.tmp <-
+  if (nPlots.tmp > 1) {as.numeric(cut(1:ncol(pcaCorrelations), nPlots.tmp))
+  } else rep(1, ncol(pcaCorrelations))
+# pcaCorrelations["PC1",] %>% sort()
+for (i in unique(colCutVector.tmp))
+  plot_PCcor_heatmap(pcaCorrelations[, colCutVector.tmp == i])
+
+rm_tmp(ask = FALSE)
+```
+
+## Plots of PCs by other variables
+
+### timepoint on PC1 vs. PC2 
+
+The plot below shows PC1 vs. PC2, with samples colored by timepoint
+
+```{r pcaPlotsPc1Pc2ByTimepoint, fig.width=7.5, fig.height=5, dependson=c("runPca", "setupPalettes")}
+PCs.tmp <- c("PC1", "PC2")
+colorVar.tmp <- "timepoint"
+palToUse.tmp <- pal.timepoint
+
+ggplot(
+  pdatscores,
+  aes_string(x = PCs.tmp[1], y = PCs.tmp[2], color = colorVar.tmp)) +
+  geom_point(size = 3) +
+  labs(
+    x = pca$pvars.labs[
+      as.numeric(str_extract(PCs.tmp[1], "(?<=PC)[0-9]+"))],
+    y = pca$pvars.labs[
+      as.numeric(str_extract(PCs.tmp[2], "(?<=PC)[0-9]+"))]) +
+  scale_color_manual(values = palToUse.tmp)
+
+rm_tmp(ask = FALSE)
+```
+
+### timepoint on PC3 vs. PC4 
+
+The plot below shows PC3 vs. PC4, with samples colored by timepoint
+
+```{r pcaPlotsPc3Pc4ByTimepoint, fig.width=7.5, fig.height=5, dependson=c("runPca", "setupPalettes")}
+PCs.tmp <- c("PC3", "PC4")
+colorVar.tmp <- "timepoint"
+palToUse.tmp <- pal.timepoint
+
+ggplot(
+  pdatscores,
+  aes_string(x = PCs.tmp[1], y = PCs.tmp[2], color = colorVar.tmp)) +
+  geom_point(size = 3) +
+  labs(
+    x = pca$pvars.labs[
+      as.numeric(str_extract(PCs.tmp[1], "(?<=PC)[0-9]+"))],
+    y = pca$pvars.labs[
+      as.numeric(str_extract(PCs.tmp[2], "(?<=PC)[0-9]+"))]) +
+  scale_color_manual(values = palToUse.tmp)
+
+rm_tmp(ask = FALSE)
+```
+
+### treatment on PC1 vs. PC2
+
+The plot below shows PC1 vs. PC2, with samples colored by treatment
+
+```{r pcaPlotsPc1Pc2ByTreatment, fig.width=7.75, fig.height=5, dependson=c("runPca", "setupPalettes")}
+PCs.tmp <- c("PC1", "PC2")
+colorVar.tmp <- "treatment"
+palToUse.tmp <- palTreatment
+
+ggplot(
+  pdatscores,
+  aes_string(x = PCs.tmp[1], y = PCs.tmp[2], color = colorVar.tmp)) +
+  geom_point(size = 3) +
+  labs(
+    x = pca$pvars.labs[
+      as.numeric(str_extract(PCs.tmp[1], "(?<=PC)[0-9]+"))],
+    y = pca$pvars.labs[
+      as.numeric(str_extract(PCs.tmp[2], "(?<=PC)[0-9]+"))]) +
+  scale_color_manual(values = palToUse.tmp)
+
+rm_tmp(ask = FALSE)
+```
+
+### treatment on PC4 vs. PC5
+
+The plot below shows PC4 vs. PC5, with samples colored by treatment
+
+```{r pcaPlotsPc4Pc5ByTreatment, fig.width=7.75, fig.height=5, dependson=c("runPca", "setupPalettes")}
+PCs.tmp <- c("PC4", "PC5")
+colorVar.tmp <- "treatment"
+palToUse.tmp <- palTreatment
+
+ggplot(
+  pdatscores,
+  aes_string(x = PCs.tmp[1], y = PCs.tmp[2], color = colorVar.tmp)) +
+  geom_point(size = 3) +
+  labs(
+    x = pca$pvars.labs[
+      as.numeric(str_extract(PCs.tmp[1], "(?<=PC)[0-9]+"))],
+    y = pca$pvars.labs[
+      as.numeric(str_extract(PCs.tmp[2], "(?<=PC)[0-9]+"))]) +
+  scale_color_manual(values = palToUse.tmp)
+
+rm_tmp(ask = FALSE)
+```
+
+### donorId on PC1 vs. PC2
+
+The plot below shows PC1 vs. PC2, with samples colored by donorId
+
+```{r pcaPlotsPc1Pc2ByDonorId, fig.width=5.5, fig.height=5, dependson=c("runPca", "setupPalettes")}
+PCs.tmp <- c("PC1", "PC2")
+colorVar.tmp <- "donorId"
+palToUse.tmp <- pal.donorId
+
+ggplot(
+  pdatscores,
+  aes_string(x = PCs.tmp[1], y = PCs.tmp[2], color = colorVar.tmp)) +
+  geom_point(size = 3) +
+  labs(
+    x = pca$pvars.labs[
+      as.numeric(str_extract(PCs.tmp[1], "(?<=PC)[0-9]+"))],
+    y = pca$pvars.labs[
+      as.numeric(str_extract(PCs.tmp[2], "(?<=PC)[0-9]+"))]) +
+  scale_color_manual(values = palToUse.tmp) +
+  guides(color = "none")
+
+rm_tmp(ask = FALSE)
+```
+
+This plot shows substantial separation by donor.
+
+# Differential expression comparisons
+
+For the differential expression analyses, we will build a model including all conditions, then extract the relevant contrasts. We incorporate donorId in the models order to make these analyses effectively paired.
+
+```{r limmaTimepointTreatment, dependson="filterNormalizeGenes"}
+condition.tmp <- 
+  with(
+    designQc,
+    !is.na(timepoint) & !is.na(treatment))
+masterTimepointTreatment <-
+  designQc %>%
+  filter(condition.tmp) %>%
+  droplevels()
+dgeCountsTimepointTreatment <-
+  calc_norm_counts(
+    counts = countsPc,
+    design = masterTimepointTreatment, libID_col = "libid",
+    min_cpm = 1, min_libs_perc = 0.1,
+    normalize = TRUE, return_DGEcounts = TRUE)
+masterTimepointTreatment <-
+  masterTimepointTreatment[
+    match(colnames(dgeCountsTimepointTreatment),
+          masterTimepointTreatment[["libid"]]),]
+
+# design is a little weird because the baseline sample is present only for treatment == "none"
+designMatTimepointTreatment <-
+  model.matrix(
+    ~ timepoint + timepoint:treatment, # usually include sex here, but all mice were male
+    data = masterTimepointTreatment)
+# remove design matrix column with no matching samples
+designMatTimepointTreatment <-
+  designMatTimepointTreatment[, colSums(designMatTimepointTreatment) > 0]
+vwtsTimepointTreatment <-
+  voomWithQualityWeights(
+    dgeCountsTimepointTreatment,
+    design = designMatTimepointTreatment,
+    plot = FALSE, span = 0.2) # reduce span to better model low-count genes
+corfitTimepointTreatment <-
+  duplicateCorrelation(
+    vwtsTimepointTreatment,
+    design = designMatTimepointTreatment,
+    block = masterTimepointTreatment$donorId)
+vfitTimepointTreatment <-
+  lmFit(vwtsTimepointTreatment,
+        block = masterTimepointTreatment$donorId,
+        correlation = corfitTimepointTreatment$consensus.correlation)
+
+rm_tmp(ask = FALSE)
+```
+
+## Genes differentially expressed between treatments at each timepoint
+
+This compares the samples with and without harmine at each timepoint. It should thus capture he effect of harmine throughout the differentiation period.
+
+```{r contrastsTreatmentEachTimepoint, dependson="limmaTimepointTreatment"}
+timepoints.tmp <- setdiff(levels(design$timepoint), "0")
+contrastsTreatmentEachTimepoint <-
+  lapply(timepoints.tmp,
+         function(x)
+           as.numeric(colnames(vfitTimepointTreatment$design) %in% paste0("timepoint", x, ":treatment10uM Harmine"))) %>%
+  bind_cols() %>%
+  magrittr::set_colnames(paste0("harmine_vs_none_", timepoints.tmp)) %>%
+  as.matrix()
+
+contrasts.fitTreatmentEachTimepoint <-
+  vfitTimepointTreatment %>%
+  contrasts.fit(contrasts = contrastsTreatmentEachTimepoint) %>%
+  eBayes()
+
+topGenesTreatmentEachTimepointByTimepoint <- list()
+for (timepoint.tmp in (colnames(contrastsTreatmentEachTimepoint))) {
+  topGenesTreatmentEachTimepointByTimepoint[[timepoint.tmp]] <-
+    contrasts.fitTreatmentEachTimepoint %>%
+    topTable(
+      coef = timepoint.tmp,
+      number = Inf, sortBy = "P") %>%
+    rownames_to_column(var = "gene")
+}
+
+rm_tmp(ask = FALSE)
+```
+
+```{r writeOutTopGenesTreatmentEachTimepointByTimepoint, dependson="contrastsTreatmentEachTimepoint"}
+topGenesTreatmentEachTimepointByTimepoint %>%
+  writexl::write_xlsx(
+    path =
+      file.path(
+        "data_output",
+        paste0("genes_DE_harmine_vs_no_harmine_at_each_timepoint.",
+               filenameSuffix, ".xlsx")),
+    format_headers = FALSE)
+```
+
+### Volcano plots of genes differentially expressed with each condition
+
+```{r volcanoPlotParamsTreatmentEachTimepointByTimepoint, dependson="contrastsTreatmentEachTimepoint"}
+# set p-value and logFC cuts for gene labels 
+volcanoPlotParamsTreatmentEachTimepointByTimepoint <- list()
+
+# volcanoPlotParamsTreatmentEachTimepointByTimepoint[["p_cut"]] <- 1e-10
+# volcanoPlotParamsTreatmentEachTimepointByTimepoint[["fc_cut"]] <- 4.5
+volcanoPlotParamsTreatmentEachTimepointByTimepoint[["nGenesToPlot"]] <- 20
+
+# set plot limits across all plots
+volcanoPlotParamsTreatmentEachTimepointByTimepoint[["xLim"]] <-
+  rep(max(abs(unlist(lapply(topGenesTreatmentEachTimepointByTimepoint, function(x) x$logFC)))), 2) *
+  c(-1,1)
+volcanoPlotParamsTreatmentEachTimepointByTimepoint[["yLim"]] <-
+  c(0, max(-log10(unlist(lapply(topGenesTreatmentEachTimepointByTimepoint, function(x) x$adj.P.Val)))))
+
+# set level for line indicating adjusted p-value threshold
+volcanoPlotParamsTreatmentEachTimepointByTimepoint[["adjPValueLimit"]] <- 0.05
+```
+
+The volcano plots below show the differential expression between harmine and no harmine, at each timepoint. Genes on the right are up-regulated with harmine, genes to the left are down-regulated with harmine. The `r volcanoPlotParamsTreatmentEachTimepointByTimepoint[["nGenesToPlot"]]` genes with the strongest combination of adjusted p-value and logFC are labeled. The horizontal dashed line indicates adjusted p-value of `r volcanoPlotParamsTreatmentEachTimepointByTimepoint[["adjPValueLimit"]]`.
+
+```{r volcanoTreatmentEachTimepointByTimepoint, fig.width=6.5, fig.height=6, dependson=c("limmaTimepointTreatment", "volcanoPlotParamsTreatmentEachTimepointByTimepoint")}
+# make plots
+for (condition.tmp in names(topGenesTreatmentEachTimepointByTimepoint)) {
+  print(
+    ggplot(data = topGenesTreatmentEachTimepointByTimepoint[[condition.tmp]],
+           aes(x = logFC, y = -log10(adj.P.Val))) + 
+      geom_point(alpha = 0.6, size = 3, shape = 16) +
+      ggrepel::geom_text_repel(
+        data =
+          topGenesTreatmentEachTimepointByTimepoint[[condition.tmp]] %>%
+          # dplyr::filter(
+            # (abs(logFC) >= volcanoPlotParamsTreatmentEachTimepointByTimepoint[["fc_cut"]]) |
+            #   (adj.P.Val < volcanoPlotParamsTreatmentEachTimepointByTimepoint[["p_cut"]])),
+          mutate(ordering_var = abs(logFC) * -log10(adj.P.Val)) %>%
+          dplyr::arrange(desc(ordering_var)) %>%
+          dplyr::slice(1:volcanoPlotParamsTreatmentEachTimepointByTimepoint[["nGenesToPlot"]]),
+        aes(label = gene), color = "black", size = 5) +
+      geom_vline(xintercept = 0, linetype = "dashed") +
+      geom_hline(
+        yintercept = -log10(volcanoPlotParamsTreatmentEachTimepointByTimepoint[["adjPValueLimit"]]), linetype = "dashed") +
+      labs(title = condition.tmp) +
+      lims(x = volcanoPlotParamsTreatmentEachTimepointByTimepoint[["xLim"]],
+           y = volcanoPlotParamsTreatmentEachTimepointByTimepoint[["yLim"]])
+  )
+}
+
+rm_tmp(ask = FALSE)
+```
+
+### Heatmaps of genes differentially expressed with treatment at each timepoint
+
+```{r heatmapSetup1TreatmentEachTimepointByTimepointGenesEach, dependson="limmaTimepointTreatment"}
+heatmapParamsTreatmentEachTimepointByTimepointGenesEach <- list()
+
+# set p-value and fold-change cutoffs, and determine genes to plot
+# heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["fc_cut"]] <- 1
+# heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["p_cut"]] <- 0.8
+heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["nGenes"]] <- 50
+
+heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["genesToPlot"]] <-
+  lapply(
+    topGenesTreatmentEachTimepointByTimepoint,
+  function(x) {
+    x %>%
+      # dplyr::filter(abs(logFC) > fc_cut.heatmapTreatmentEachTimepointByTimepointGenesEach) %>%
+      dplyr::arrange(P.Value) %>%
+      dplyr::slice(1:heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["nGenes"]]) %>%
+      pull(gene)
+  })
+```
+
+The heatmaps below show the `r heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["nGenes"]]` most strongly differentially expressed genes (by significance) between harmine and no harmine at each timepoint. The expression has been scaled within each gene so that the extreme values for each gene are more readily visible.
+
+```{r heatmapSetup2TreatmentEachTimepointByTimepointGenesEach, dependson=c("heatmapSetup1TreatmentEachTimepointByTimepointGenesEach", "setupPalettes")}
+# set up color scheme
+heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["annotationColors"]] <- list()
+
+heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["annotationColors"]][["treatment"]] <-
+  palTreatment
+
+heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["annotationColors"]][["timepoint"]] <-
+  pal.timepoint
+
+heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["annotationColors"]][["donorId"]] <-
+  pal.donorId
+
+# Determine order of libraries (for use with counts and heatmap annotation)
+heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["libidOrder"]] <- list()
+for (condition.tmp in names(topGenesTreatmentEachTimepointByTimepoint)) {
+  heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["libidOrder"]][[condition.tmp]] <-
+    masterTimepointTreatment %>%
+    dplyr::filter(
+      treatment %in% c("none", "10uM Harmine"),
+      timepoint %in% str_extract(condition.tmp, "[0-9]+h$")) %>%
+    dplyr::arrange(timepoint, treatment, donorId, libid) %>%
+  pull(libid)
+}
+
+# Make a column annotation object
+heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["columnAnnotation"]] <- list()
+for (condition.tmp in names(topGenesTreatmentEachTimepointByTimepoint)) {
+  heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["columnAnnotation"]][[condition.tmp]] <-
+    HeatmapAnnotation(
+      name = condition.tmp,
+      df =
+        masterTimepointTreatment[
+          match(heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["libidOrder"]][[condition.tmp]],
+                masterTimepointTreatment$libid),] %>%
+        dplyr::select(
+          timepoint,
+          treatment,
+          donorId) %>%
+        as.data.frame(),
+      col = list(
+        timepoint =
+          heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["annotationColors"]][["timepoint"]],
+        treatment =
+          heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["annotationColors"]][["treatment"]],
+        donorId =
+          heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["annotationColors"]][["donorId"]]),
+      show_legend = c(TRUE, TRUE, TRUE))
+}
+
+# Set up heatmap counts matrix
+heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["countMatrix"]] <- list()
+heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["countMatrixRange01"]] <- list()
+for (condition.tmp in names(topGenesTreatmentEachTimepointByTimepoint)) {
+  heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["countMatrix"]][[condition.tmp]] <-
+    vwtsTimepointTreatment$E[
+      heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["genesToPlot"]][[condition.tmp]],
+      match(
+        heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["libidOrder"]][[condition.tmp]],
+        colnames(vwtsTimepointTreatment))]
+  
+  heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["countMatrixRange01"]][[condition.tmp]] <-
+    heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["countMatrix"]][[condition.tmp]] %>%
+    apply(MARGIN=1, range01) %>%
+  t()
+}
+
+rm_tmp(ask = FALSE)
+```
+
+```{r heatmapSortedTreatmentEachTimepointByTimepointGenesEach, fig.width=7, fig.height=5, dependson=c("heatmapSetup2TreatmentEachTimepointByTimepointGenesEach", "setHeatmapColors")}
+heatmapSortedTreatmentEachTimepointByTimepointGenesEach <- list()
+for (condition.tmp in names(topGenesTreatmentEachTimepointByTimepoint)) {
+  cat(condition.tmp, "\n")
+  heatmapSortedTreatmentEachTimepointByTimepointGenesEach[[condition.tmp]] <-
+    Heatmap(
+      heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["countMatrixRange01"]][[condition.tmp]],
+      name = "Expression\n(scaled)",
+      # heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["countMatrix"]][[condition.tmp]],
+      # name = "Expression",
+      col = heatmap_colors,
+      cluster_columns = FALSE,
+      show_row_names =
+        length(heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["genesToPlot"]][[condition.tmp]]) <= 50,
+      row_names_gp = gpar(fontsize = 7),
+      show_column_names = FALSE,
+      top_annotation =
+        heatmapParamsTreatmentEachTimepointByTimepointGenesEach[["columnAnnotation"]][[condition.tmp]])
+
+  print(heatmapSortedTreatmentEachTimepointByTimepointGenesEach[[condition.tmp]])
+  
+  pdf(
+    file.path(
+      dirPlots,
+      paste0("heatmapSortedTreatmentEachTimepointByTimepointGenesEach.",
+             condition.tmp, ".",
+             filenameSuffix, ".pdf")),
+    w = 7, h = 5)
+  print(heatmapSortedTreatmentEachTimepointByTimepointGenesEach[[condition.tmp]])
+  invisible(dev.off())
+}
+
+rm_tmp(ask = FALSE)
+```
+
+### Heatmaps of genes differentially expressed with treatment at each timepoint, showing all timepoints
+
+```{r heatmapSetup1TreatmentEachTimepointByTimepointGenesEachShowAll, dependson="limmaTimepointTreatment"}
+heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll <- list()
+
+# set p-value and fold-change cutoffs, and determine genes to plot
+# heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["fc_cut"]] <- 1
+# heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["p_cut"]] <- 0.8
+heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["nGenesToPlotEach"]] <- 15
+
+heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["genesToPlot"]] <-
+  lapply(
+    topGenesTreatmentEachTimepointByTimepoint,
+  function(x) {
+    x %>%
+      # dplyr::filter(abs(logFC) > fc_cut.heatmapTreatmentEachTimepointByTimepointGenesEachShowAll) %>%
+      dplyr::arrange(P.Value) %>%
+      dplyr::slice(1:heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["nGenesToPlotEach"]]) %>%
+      pull(gene)
+  }) %>%
+  unlist() %>%
+  unique()
+```
+
+The heatmaps below show the union of the `r heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["nGenesToPlotEach"]]` most strongly differentially expressed genes (by significance) between harmine and no harmine at each timepoint. The expression has been scaled within each gene so that the extreme values for each gene are more readily visible.
+
+```{r heatmapSetup2TreatmentEachTimepointByTimepointGenesEachShowAll, dependson=c("heatmapSetup1TreatmentEachTimepointByTimepointGenesEachShowAll", "setupPalettes")}
+# set up color scheme
+heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["annotationColors"]] <- list()
+
+heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["annotationColors"]][["treatment"]] <-
+  palTreatment
+
+heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["annotationColors"]][["timepoint"]] <-
+  pal.timepoint
+
+heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["annotationColors"]][["donorId"]] <-
+  pal.donorId
+
+# Determine order of libraries (for use with counts and heatmap annotation)
+heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["libidOrder"]] <- 
+  masterTimepointTreatment %>%
+  dplyr::arrange(timepoint, treatment, donorId, libid) %>%
+  pull(libid)
+
+# Make a column annotation object
+heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["columnAnnotation"]] <- 
+  HeatmapAnnotation(
+    name = "Expression",
+    df =
+      masterTimepointTreatment[
+        match(heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["libidOrder"]],
+              masterTimepointTreatment$libid),] %>%
+      dplyr::select(
+        timepoint,
+        treatment,
+        donorId) %>%
+      as.data.frame(),
+    col = list(
+      timepoint =
+        heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["annotationColors"]][["timepoint"]],
+      treatment =
+        heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["annotationColors"]][["treatment"]],
+      donorId =
+        heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["annotationColors"]][["donorId"]]),
+    show_legend = c(TRUE, TRUE, TRUE))
+
+# Set up heatmap counts matrix
+heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["countMatrix"]] <-
+  heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["countMatrix"]] <-
+    vwtsTimepointTreatment$E[
+      heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["genesToPlot"]],
+      match(
+        heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["libidOrder"]],
+        colnames(vwtsTimepointTreatment))]
+
+heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["countMatrixRange01"]] <-
+  heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["countMatrix"]] %>%
+  apply(MARGIN=1, range01) %>%
+  t()
+
+rm_tmp(ask = FALSE)
+```
+
+```{r heatmapSortedTreatmentEachTimepointByTimepointGenesEachShowAll, fig.width=8.5, fig.height=5, dependson=c("heatmapSetup2TreatmentEachTimepointByTimepointGenesEachShowAll", "setHeatmapColors")}
+heatmapSortedTreatmentEachTimepointByTimepointGenesEachShowAll <-
+  Heatmap(
+    heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["countMatrixRange01"]],
+    name = "Expression\n(scaled)",
+    # heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["countMatrix"]],
+    # name = "Expression",
+    col = heatmap_colors,
+    cluster_columns = FALSE,
+    show_row_names =
+      length(heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["genesToPlot"]]) <= 60,
+    row_names_gp = gpar(fontsize = 6),
+    show_column_names = FALSE,
+    top_annotation =
+      heatmapParamsTreatmentEachTimepointByTimepointGenesEachShowAll[["columnAnnotation"]])
+
+print(heatmapSortedTreatmentEachTimepointByTimepointGenesEachShowAll)
+
+pdf(
+  file.path(
+    dirPlots,
+    paste0("heatmapSortedTreatmentEachTimepointByTimepointGenesEachShowAll.", filenameSuffix, ".pdf")),
+  w = 8.5, h = 5)
+print(heatmapSortedTreatmentEachTimepointByTimepointGenesEachShowAll)
+invisible(dev.off())
+```
+
+
+## Genes differentially expressed vs baseline, with each treatment at each timepoint
+
+This compares the samples with each treatment to the baseline sample, at each timepoint. It thus captures the gene expression changes over time without harmine, and the corresponding gene expression changes over time with harmine.
+
+```{r contrastsTimepointEachTreatment, dependson="limmaTimepointTreatment"}
+contrastsTimepointEachTreatment <- 
+  contrasts.fitTimepointEachTreatment <-
+  topGenesTimepointEachTreatmentByTreatmentTimepoint <-
+  list()
+timepoints.tmp <- setdiff(levels(masterTimepointTreatment$timepoint), "0")
+
+for (treatment.tmp in levels(masterTimepointTreatment$treatment)) {
+  contrastsTimepointEachTreatment[[treatment.tmp]] <-
+    lapply(
+      timepoints.tmp,
+      function(x)
+        as.numeric(
+          colnames(vfitTimepointTreatment$design) %in%
+            c(paste0("timepoint", x), paste0("timepoint", x, ":treatment", treatment.tmp)))) %>%
+    bind_cols() %>%
+    magrittr::set_colnames(paste0("timepoint_", timepoints.tmp)) %>%
+    as.matrix()
+  
+  contrasts.fitTimepointEachTreatment[[treatment.tmp]] <-
+    vfitTimepointTreatment %>%
+    contrasts.fit(contrasts = contrastsTimepointEachTreatment[[treatment.tmp]]) %>%
+    eBayes()
+  
+  topGenesTimepointEachTreatmentByTreatmentTimepoint[[treatment.tmp]] <- list()
+  for (timepoint.tmp in (colnames(contrastsTimepointEachTreatment[[treatment.tmp]]))) {
+    topGenesTimepointEachTreatmentByTreatmentTimepoint[[treatment.tmp]][[timepoint.tmp]] <-
+      contrasts.fitTimepointEachTreatment[[treatment.tmp]] %>%
+      topTable(
+        coef = timepoint.tmp,
+        number = Inf, sortBy = "P") %>%
+      rownames_to_column(var = "gene")
+  }
+}
+
+rm_tmp(ask = FALSE)
+```
+
+```{r writeOutTopGenesTimepointEachTreatmentByTreatmentTimepoint, dependson="contrastsTimepointEachTreatment"}
+for (treatment.tmp in names(topGenesTimepointEachTreatmentByTreatmentTimepoint))
+  topGenesTimepointEachTreatmentByTreatmentTimepoint[[treatment.tmp]] %>%
+  writexl::write_xlsx(
+    path =
+      file.path(
+        "data_output",
+        paste0("genes_DE_treatment_vs_baseline_each_timepoint.",
+               str_replace_all(treatment.tmp, " ", "_"), ".",
+               filenameSuffix, ".xlsx")),
+    format_headers = FALSE)
+```
+
+### Volcano plots of genes differentially expressed vs baseline, with each treatment at each timepoint
+
+```{r volcanoPlotParamsTimepointEachTreatmentByTreatmentTimepoint, dependson="contrastsTimepointEachTreatment"}
+# set p-value and logFC cuts for gene labels 
+volcanoPlotParamsTimepointEachTreatmentByTreatmentTimepoint <- list()
+
+# volcanoPlotParamsTimepointEachTreatmentByTreatmentTimepoint[["p_cut"]] <- 1e-10
+# volcanoPlotParamsTimepointEachTreatmentByTreatmentTimepoint[["fc_cut"]] <- 4.5
+volcanoPlotParamsTimepointEachTreatmentByTreatmentTimepoint[["nGenesToPlot"]] <- 20
+
+# set plot limits across all plots
+volcanoPlotParamsTimepointEachTreatmentByTreatmentTimepoint[["xLim"]] <-
+  lapply(topGenesTimepointEachTreatmentByTreatmentTimepoint,
+         function(x) lapply(x, function(y) y$logFC)) %>%
+  unlist() %>%
+  abs() %>%
+  max() %>%
+  multiply_by(c(-1,1))
+volcanoPlotParamsTimepointEachTreatmentByTreatmentTimepoint[["yLim"]] <-
+  c(0,
+    lapply(topGenesTimepointEachTreatmentByTreatmentTimepoint,
+         function(x) lapply(x, function(y) y$adj.P.Val)) %>%
+      unlist() %>%
+      log10() %>%
+      multiply_by(-1) %>%
+      max()
+    )
+
+# set level for line indicating adjusted p-value threshold
+volcanoPlotParamsTimepointEachTreatmentByTreatmentTimepoint[["adjPValueLimit"]] <- 0.05
+```
+
+The volcano plots below show the differential expression vs baseline with each treatment, at each timepoint. Genes on the right are up-regulated at the specified timepoint, genes to the left are down-regulated at the specified timepoint The `r volcanoPlotParamsTimepointEachTreatmentByTreatmentTimepoint[["nGenesToPlot"]]` genes with the strongest combination of adjusted p-value and logFC are labeled. The horizontal dashed line indicates adjusted p-value of `r volcanoPlotParamsTimepointEachTreatmentByTreatmentTimepoint[["adjPValueLimit"]]`.
+
+```{r volcanoTimepointEachTreatmentByTreatmentTimepoint, fig.width=6.5, fig.height=6, dependson=c("contrastsTimepointEachTreatment", "volcanoPlotParamsTimepointEachTreatmentByTreatmentTimepoint")}
+# make plots
+for (treatment.tmp in names(topGenesTimepointEachTreatmentByTreatmentTimepoint)) {
+  for (timepoint.tmp in names(topGenesTimepointEachTreatmentByTreatmentTimepoint[[treatment.tmp]])) {
+    plot.tmp <-
+      ggplot(data = topGenesTimepointEachTreatmentByTreatmentTimepoint[[treatment.tmp]][[timepoint.tmp]],
+             aes(x = logFC, y = -log10(adj.P.Val))) + 
+      geom_point(alpha = 0.6, size = 3, shape = 16) +
+      ggrepel::geom_text_repel(
+        data =
+          topGenesTimepointEachTreatmentByTreatmentTimepoint[[treatment.tmp]][[timepoint.tmp]] %>%
+          # dplyr::filter(
+          # (abs(logFC) >= volcanoPlotParamsTimepointEachTreatmentByTreatmentTimepoint[["fc_cut"]]) |
+          #   (adj.P.Val < volcanoPlotParamsTimepointEachTreatmentByTreatmentTimepoint[["p_cut"]])),
+          mutate(ordering_var = abs(logFC) * -log10(adj.P.Val)) %>%
+          dplyr::arrange(desc(ordering_var)) %>%
+          dplyr::slice(1:volcanoPlotParamsTimepointEachTreatmentByTreatmentTimepoint[["nGenesToPlot"]]),
+        aes(label = gene), color = "black", size = 5) +
+      geom_vline(xintercept = 0, linetype = "dashed") +
+      geom_hline(
+        yintercept = -log10(volcanoPlotParamsTimepointEachTreatmentByTreatmentTimepoint[["adjPValueLimit"]]),
+        linetype = "dashed") +
+      labs(title = paste0(timepoint.tmp, ", treatment: ", treatment.tmp)) +
+      lims(x = volcanoPlotParamsTimepointEachTreatmentByTreatmentTimepoint[["xLim"]],
+           y = volcanoPlotParamsTimepointEachTreatmentByTreatmentTimepoint[["yLim"]]) +
+      theme(title = element_text(size = rel(0.8)))
+    print(plot.tmp)
+  }
+}
+
+rm_tmp(ask = FALSE)
+```
+
+### Heatmaps of genes differentially expressed vs baseline, with each treatment at each timepoint
+
+```{r heatmapSetup1TimepointEachTreatmentByTreatmentTimepointGenesEach, dependson="limmaTimepointTreatment"}
+heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach <- list()
+
+# set p-value and fold-change cutoffs, and determine genes to plot
+# heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["fc_cut"]] <- 1
+# heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["p_cut"]] <- 0.8
+heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["nGenes"]] <- 50
+
+heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["genesToPlot"]] <-
+  lapply(
+    topGenesTimepointEachTreatmentByTreatmentTimepoint,
+    function(x) {
+      lapply(
+        x, 
+        function(y) {
+          y %>%
+            # dplyr::filter(abs(logFC) > fc_cut.heatmapTimepointEachTreatmentByTreatmentTimepointGenesEach) %>%
+            dplyr::arrange(P.Value) %>%
+            dplyr::slice(1:heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["nGenes"]]) %>%
+            pull(gene)
+        })
+    })
+```
+
+The heatmaps below show the `r heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["nGenes"]]` most strongly differentially expressed genes (by significance)  with each treatment, at each timepoint. The expression has been scaled within each gene so that the extreme values for each gene are more readily visible.
+
+```{r heatmapSetup2TimepointEachTreatmentByTreatmentTimepointGenesEach, dependson=c("heatmapSetup1TimepointEachTreatmentByTreatmentTimepointGenesEach", "setupPalettes")}
+# set up color scheme
+heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["annotationColors"]] <- list()
+
+heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["annotationColors"]][["treatment"]] <-
+  palTreatment
+
+heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["annotationColors"]][["timepoint"]] <-
+  pal.timepoint
+
+heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["annotationColors"]][["donorId"]] <-
+  pal.donorId
+
+# Determine order of libraries (for use with counts and heatmap annotation)
+heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["libidOrder"]] <- list()
+for (treatment.tmp in names(topGenesTimepointEachTreatmentByTreatmentTimepoint)) {
+  heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["libidOrder"]][[treatment.tmp]] <- list()
+  for (timepoint.tmp in names(topGenesTimepointEachTreatmentByTreatmentTimepoint[[treatment.tmp]])) {
+    heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["libidOrder"]][[treatment.tmp]][[timepoint.tmp]] <-
+      masterTimepointTreatment %>%
+      dplyr::filter(
+        (timepoint == "0") |
+          ((treatment %in% treatment.tmp) & (timepoint %in% str_extract(timepoint.tmp, "[0-9]+h$")))) %>%
+      dplyr::arrange(treatment, timepoint, donorId, libid) %>%
+      pull(libid)
+  }
+}
+
+# Make a column annotation object
+heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["columnAnnotation"]] <- list()
+for (treatment.tmp in names(topGenesTimepointEachTreatmentByTreatmentTimepoint)) {
+  heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["columnAnnotation"]][[treatment.tmp]] <- list()
+  for (timepoint.tmp in names(topGenesTimepointEachTreatmentByTreatmentTimepoint[[treatment.tmp]])) {
+    heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["columnAnnotation"]][[treatment.tmp]][[timepoint.tmp]] <-
+      HeatmapAnnotation(
+        name = paste("Effect of", treatment.tmp, "\nat", timepoint.tmp),
+        df =
+          masterTimepointTreatment[
+            match(heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["libidOrder"]][[treatment.tmp]][[timepoint.tmp]],
+                  masterTimepointTreatment$libid),] %>%
+          dplyr::select(
+            treatment,
+            timepoint,
+            donorId) %>%
+          as.data.frame(),
+        col = list(
+          treatment =
+            heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["annotationColors"]][["treatment"]],
+          timepoint =
+            heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["annotationColors"]][["timepoint"]],
+          donorId =
+            heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["annotationColors"]][["donorId"]]),
+        show_legend = c(TRUE, TRUE, TRUE))
+  }
+}
+
+# Set up heatmap counts matrix
+heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["countMatrix"]] <- list()
+heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["countMatrixRange01"]] <- list()
+for (treatment.tmp in names(topGenesTimepointEachTreatmentByTreatmentTimepoint)) {
+  heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["countMatrix"]][[treatment.tmp]] <- list()
+  heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["countMatrixRange01"]][[treatment.tmp]] <- list()
+  for (timepoint.tmp in names(topGenesTimepointEachTreatmentByTreatmentTimepoint[[treatment.tmp]])) {
+    heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["countMatrix"]][[treatment.tmp]][[timepoint.tmp]] <-
+      vwtsTimepointTreatment$E[
+        heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["genesToPlot"]][[treatment.tmp]][[timepoint.tmp]],
+        match(
+          heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["libidOrder"]][[treatment.tmp]][[timepoint.tmp]],
+          colnames(vwtsTimepointTreatment))]
+    
+    heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["countMatrixRange01"]][[treatment.tmp]][[timepoint.tmp]] <-
+      heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["countMatrix"]][[treatment.tmp]][[timepoint.tmp]] %>%
+      apply(MARGIN=1, range01) %>%
+      t()
+  }
+}
+
+rm_tmp(ask = FALSE)
+```
+
+```{r heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEach, fig.width=7, fig.height=5, dependson=c("heatmapSetup2TimepointEachTreatmentByTreatmentTimepointGenesEach", "setHeatmapColors")}
+heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEach <- list()
+for (treatment.tmp in names(topGenesTimepointEachTreatmentByTreatmentTimepoint)) {
+  heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEach[[treatment.tmp]] <- list()
+  for (timepoint.tmp in names(topGenesTimepointEachTreatmentByTreatmentTimepoint[[treatment.tmp]])) {
+    cat("\nEffect of", treatment.tmp, "at", timepoint.tmp, "\n")
+    heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEach[[treatment.tmp]][[timepoint.tmp]] <-
+      Heatmap(
+        heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["countMatrixRange01"]][[treatment.tmp]][[timepoint.tmp]],
+        name = "Expression\n(scaled)",
+        # heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["countMatrix"]][[treatment.tmp]][[timepoint.tmp]],
+        # name = "Expression",
+        col = heatmap_colors,
+        cluster_columns = FALSE,
+        show_row_names =
+          length(
+            heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["genesToPlot"]][[treatment.tmp]][[timepoint.tmp]]) <= 50,
+        row_names_gp = gpar(fontsize = 7),
+        show_column_names = FALSE,
+        top_annotation =
+          heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEach[["columnAnnotation"]][[treatment.tmp]][[timepoint.tmp]])
+    
+    print(heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEach[[treatment.tmp]][[timepoint.tmp]])
+    
+    pdf(
+      file.path(
+        dirPlots,
+        paste0("heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEach.",
+               treatment.tmp, "_at_", timepoint.tmp, ".",
+               filenameSuffix, ".pdf")),
+      w = 7, h = 5)
+    print(heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEach[[treatment.tmp]][[timepoint.tmp]])
+    invisible(dev.off())
+  }
+}  
+
+rm_tmp(ask = FALSE)
+```
+
+### Heatmap of genes differentially expressed vs baseline, with each treatment at each timepoint, showing all timepoints
+
+```{r heatmapSetup1TimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints, dependson="limmaTimepointTreatment"}
+heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints <- list()
+
+# set p-value and fold-change cutoffs, and determine genes to plot
+# heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["fc_cut"]] <- 1
+# heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["p_cut"]] <- 0.8
+heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["nGenesToPlotEach"]] <- 15
+
+heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["genesToPlot"]] <-
+  lapply(
+    topGenesTimepointEachTreatmentByTreatmentTimepoint,
+    function(x) {
+      lapply(x, function(y) {
+        y %>%
+          # dplyr::filter(abs(logFC) > fc_cut.heatmapTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints) %>%
+          dplyr::arrange(P.Value) %>%
+          dplyr::slice(1:heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["nGenesToPlotEach"]]) %>%
+          pull(gene)
+      }) %>%
+        unlist() %>%
+        unique()
+    })
+```
+
+The heatmaps below show the union of the `r heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["nGenesToPlotEach"]]` most strongly differentially expressed genes (by significance) at each timepoint vs baseline, for each treatment. The expression has been scaled within each gene so that the extreme values for each gene are more readily visible.
+
+```{r heatmapSetup2TimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints, dependson=c("heatmapSetup1TimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints", "setupPalettes")}
+# set up color scheme
+heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["annotationColors"]] <- list()
+
+heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["annotationColors"]][["treatment"]] <-
+  palTreatment
+
+heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["annotationColors"]][["timepoint"]] <-
+  pal.timepoint
+
+heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["annotationColors"]][["donorId"]] <-
+  pal.donorId
+
+# Determine order of libraries (for use with counts and heatmap annotation)
+heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["libidOrder"]] <- list()
+for (treatment.tmp in names(topGenesTimepointEachTreatmentByTreatmentTimepoint)) {
+  heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["libidOrder"]][[treatment.tmp]] <-
+    masterTimepointTreatment %>%
+    dplyr::filter(
+      (timepoint == "0") | (treatment %in% treatment.tmp)) %>%
+    dplyr::arrange(treatment, timepoint, donorId, libid) %>%
+    pull(libid)
+}
+
+# Make a column annotation object
+heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["columnAnnotation"]] <- list()
+for (treatment.tmp in names(topGenesTimepointEachTreatmentByTreatmentTimepoint)) {
+  heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["columnAnnotation"]][[treatment.tmp]] <-
+    HeatmapAnnotation(
+      name = "Expression",
+      df =
+        masterTimepointTreatment[
+          match(heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["libidOrder"]][[treatment.tmp]],
+                masterTimepointTreatment$libid),] %>%
+        dplyr::select(
+          timepoint,
+          treatment,
+          donorId) %>%
+        as.data.frame(),
+      col = list(
+        treatment =
+          heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["annotationColors"]][["treatment"]],
+        timepoint =
+          heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["annotationColors"]][["timepoint"]],
+        donorId =
+          heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["annotationColors"]][["donorId"]]),
+      show_legend = c(TRUE, TRUE, TRUE))
+}
+
+# Set up heatmap counts matrix
+heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["countMatrix"]] <- list()
+heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["countMatrixRange01"]] <- list()
+for (treatment.tmp in names(topGenesTimepointEachTreatmentByTreatmentTimepoint)) {
+  heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["countMatrix"]][[treatment.tmp]] <-
+    vwtsTimepointTreatment$E[
+      heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["genesToPlot"]][[treatment.tmp]],
+      match(
+        heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["libidOrder"]][[treatment.tmp]],
+        colnames(vwtsTimepointTreatment))]
+
+  heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["countMatrixRange01"]][[treatment.tmp]] <-
+    heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["countMatrix"]][[treatment.tmp]] %>%
+    apply(MARGIN=1, range01) %>%
+    t()
+}
+  
+rm_tmp(ask = FALSE)
+```
+
+```{r heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints, fig.width=8.5, fig.height=5, dependson=c("heatmapSetup2TimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints", "setHeatmapColors")}
+heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints <- list()
+for (treatment.tmp in names(topGenesTimepointEachTreatmentByTreatmentTimepoint)) {
+  heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[[treatment.tmp]] <-
+  Heatmap(
+    heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["countMatrixRange01"]][[treatment.tmp]],
+    name = "Expression\n(scaled)",
+    # heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["countMatrix"]],
+    # name = "Expression",
+    col = heatmap_colors,
+    cluster_columns = FALSE,
+    show_row_names =
+      length(heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["genesToPlot"]][[treatment.tmp]]) <= 50,
+    row_names_gp = gpar(fontsize = 8),
+    show_column_names = FALSE,
+    top_annotation =
+      heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[["columnAnnotation"]][[treatment.tmp]])
+  
+  print(heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[[treatment.tmp]])
+  
+  pdf(
+    file.path(
+      dirPlots,
+      paste0("heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints.",
+             treatment.tmp, ".",
+             filenameSuffix, ".pdf")),
+    w = 8.5, h = 5)
+  print(heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepoints[[treatment.tmp]])
+  invisible(dev.off())
+}
+
+rm_tmp(ask = FALSE)
+```
+
+  
+### Heatmap of genes differentially expressed vs baseline, with each treatment at each timepoint, showing all treatments and all timepoints
+
+```{r heatmapSetup1TimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints, dependson="limmaTimepointTreatment"}
+heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints <- list()
+
+# set p-value and fold-change cutoffs, and determine genes to plot
+# heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["fc_cut"]] <- 1
+# heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["p_cut"]] <- 0.8
+heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["nGenesToPlotEach"]] <- 15
+
+heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["genesToPlot"]] <-
+  lapply(
+    topGenesTimepointEachTreatmentByTreatmentTimepoint,
+    function(x) {
+      lapply(x, function(y) {
+        y %>%
+          # dplyr::filter(abs(logFC) > fc_cut.heatmapTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints) %>%
+          dplyr::arrange(P.Value) %>%
+          dplyr::slice(1:heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["nGenesToPlotEach"]]) %>%
+          pull(gene)
+      }) %>%
+        unlist()
+    }) %>%
+  unlist() %>%
+  unique()
+```
+
+The heatmaps below show the union of the `r heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["nGenesToPlotEach"]]` most strongly differentially expressed genes (by significance) at each timepoint for each treatment. The expression has been scaled within each gene so that the extreme values for each gene are more readily visible.
+
+```{r heatmapSetup2TimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints, dependson=c("heatmapSetup1TimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints", "setupPalettes")}
+# set up color scheme
+heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["annotationColors"]] <- list()
+
+heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["annotationColors"]][["treatment"]] <-
+  palTreatment
+
+heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["annotationColors"]][["timepoint"]] <-
+  pal.timepoint
+
+heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["annotationColors"]][["donorId"]] <-
+  pal.donorId
+
+# Determine order of libraries (for use with counts and heatmap annotation)
+heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["libidOrder"]] <-
+  masterTimepointTreatment %>%
+  dplyr::arrange(treatment, timepoint, donorId, libid) %>%
+  pull(libid)
+
+# Make a column annotation object
+heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["columnAnnotation"]] <-
+  HeatmapAnnotation(
+    name = "Expression",
+    df =
+      masterTimepointTreatment[
+        match(heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["libidOrder"]],
+              masterTimepointTreatment$libid),] %>%
+      dplyr::select(
+        treatment,
+        timepoint,
+        donorId) %>%
+      as.data.frame(),
+    col = list(
+      treatment =
+        heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["annotationColors"]][["treatment"]],
+      timepoint =
+        heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["annotationColors"]][["timepoint"]],
+      donorId =
+        heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["annotationColors"]][["donorId"]]),
+    show_legend = c(TRUE, TRUE, TRUE))
+
+# Set up heatmap counts matrix
+heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["countMatrix"]] <-
+  vwtsTimepointTreatment$E[
+    heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["genesToPlot"]],
+    match(
+      heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["libidOrder"]],
+      colnames(vwtsTimepointTreatment))]
+
+heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["countMatrixRange01"]] <-
+  heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["countMatrix"]] %>%
+    apply(MARGIN=1, range01) %>%
+    t()
+```
+
+```{r heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints, fig.width=8.5, fig.height=5, dependson=c("heatmapSetup2TimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints", "setHeatmapColors")}
+heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints <-
+  Heatmap(
+    heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["countMatrixRange01"]],
+    name = "Expression\n(scaled)",
+    # heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["countMatrix"]],
+    # name = "Expression",
+    col = heatmap_colors,
+    cluster_columns = FALSE,
+    show_row_names =
+      length(heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["genesToPlot"]]) <= 50,
+    row_names_gp = gpar(fontsize = 8),
+    show_column_names = FALSE,
+    top_annotation =
+      heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints[["columnAnnotation"]])
+
+print(heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints)
+
+pdf(
+  file.path(
+    dirPlots,
+    paste0("heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints.",
+           filenameSuffix, ".pdf")),
+  w = 8.5, h = 5)
+print(heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTreatmentsTimepoints)
+invisible(dev.off())
+```
+
+### Heatmap of genes differentially expressed vs baseline, with each treatment at each timepoint, showing all timepoints and all treatments
+
+```{r heatmapSetup1TimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments, dependson="limmaTimepointTreatment"}
+heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments <- list()
+
+# set p-value and fold-change cutoffs, and determine genes to plot
+# heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["fc_cut"]] <- 1
+# heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["p_cut"]] <- 0.8
+heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["nGenesToPlotEach"]] <- 15
+
+heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["genesToPlot"]] <-
+  lapply(
+    topGenesTimepointEachTreatmentByTreatmentTimepoint,
+    function(x) {
+      lapply(x, function(y) {
+        y %>%
+          # dplyr::filter(abs(logFC) > fc_cut.heatmapTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments) %>%
+          dplyr::arrange(P.Value) %>%
+          dplyr::slice(1:heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["nGenesToPlotEach"]]) %>%
+          pull(gene)
+      }) %>%
+        unlist()
+    }) %>%
+  unlist() %>%
+  unique()
+```
+
+This heatmap is identical to the one above, but has the conditions arranged differently, so that the two treatments are adjacent to each other for each timepoint. This makes it easier to compare the effects of each treatment at each timepoint.
+
+The heatmaps below show the union of the `r heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["nGenesToPlotEach"]]` most strongly differentially expressed genes (by significance) at each timepoint for each treatment. The expression has been scaled within each gene so that the extreme values for each gene are more readily visible.
+
+```{r heatmapSetup2TimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments, dependson=c("heatmapSetup1TimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments", "setupPalettes")}
+# set up color scheme
+heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["annotationColors"]] <- list()
+
+heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["annotationColors"]][["treatment"]] <-
+  palTreatment
+
+heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["annotationColors"]][["timepoint"]] <-
+  pal.timepoint
+
+heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["annotationColors"]][["donorId"]] <-
+  pal.donorId
+
+# Determine order of libraries (for use with counts and heatmap annotation)
+heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["libidOrder"]] <-
+  masterTimepointTreatment %>%
+  dplyr::arrange(timepoint, treatment, donorId, libid) %>%
+  pull(libid)
+
+# Make a column annotation object
+heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["columnAnnotation"]] <-
+  HeatmapAnnotation(
+    name = "Expression",
+    df =
+      masterTimepointTreatment[
+        match(heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["libidOrder"]],
+              masterTimepointTreatment$libid),] %>%
+      dplyr::select(
+        timepoint,
+        treatment,
+        donorId) %>%
+      as.data.frame(),
+    col = list(
+      timepoint =
+        heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["annotationColors"]][["timepoint"]],
+      treatment =
+        heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["annotationColors"]][["treatment"]],
+      donorId =
+        heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["annotationColors"]][["donorId"]]),
+    show_legend = c(TRUE, TRUE, TRUE))
+
+# Set up heatmap counts matrix
+heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["countMatrix"]] <-
+  vwtsTimepointTreatment$E[
+    heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["genesToPlot"]],
+    match(
+      heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["libidOrder"]],
+      colnames(vwtsTimepointTreatment))]
+
+heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["countMatrixRange01"]] <-
+  heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["countMatrix"]] %>%
+    apply(MARGIN=1, range01) %>%
+    t()
+```
+
+```{r heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments, fig.width=8.5, fig.height=5, dependson=c("heatmapSetup2TimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments", "setHeatmapColors")}
+heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments <-
+  Heatmap(
+    heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["countMatrixRange01"]],
+    name = "Expression\n(scaled)",
+    # heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["countMatrix"]],
+    # name = "Expression",
+    col = heatmap_colors,
+    cluster_columns = FALSE,
+    show_row_names =
+      length(heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["genesToPlot"]]) <= 50,
+    row_names_gp = gpar(fontsize = 8),
+    show_column_names = FALSE,
+    top_annotation =
+      heatmapParamsTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments[["columnAnnotation"]])
+
+print(heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments)
+
+pdf(
+  file.path(
+    dirPlots,
+    paste0("heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments.",
+           filenameSuffix, ".pdf")),
+  w = 8.5, h = 5)
+print(heatmapSortedTimepointEachTreatmentByTreatmentTimepointGenesEachShowAllTimepointsTreatments)
+invisible(dev.off())
+```
+
+
+## Genes differentially expressed vs baseline, comparison between treatments
+
+We also want to know how the expression differences from baseline at each timepoint compare between the treatments. However, because we have only a single baseline sample to compare each treatment to, this is exactly the same as directly comparing the two treatments to each other at each timepoint. To understand this, imagine we are comparing the change from baseline to 5h timepoint with harmine, vs. the change from baseline to 5h timepoint without harmine. We will call the values for harmine H5 and H0, and the values for no harmine N5 and N0. So the difference in the effect would be (H5-H0) - (N5-N0). However, because we have a single baseline value, H0 = N0. So now our difference is (H5-H0) - (N5-H0), or simply H5-N5.
+
+
+# Output R session information
+
+```{r outputSessionInfo, cache=FALSE}
+miscHelpers::print_session_info()
+```

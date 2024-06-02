@@ -1,0 +1,11 @@
+﻿GeneSetName,NumGenesinGeneSet_K,Description,NumGenesinOverlap_k,k_div_K,p_value,FDR_q_value
+HALLMARK_IL2_STAT5_SIGNALING,199,Mouse genes annotated to HALLMARK_IL2_STAT5_SIGNALING based on orthology mappings provided by the Alliance Genome Consortium,13,0.0653,1.77E-09,8.87E-08
+HALLMARK_KRAS_SIGNALING_UP,198,Mouse genes annotated to HALLMARK_KRAS_SIGNALING_UP based on orthology mappings provided by the Alliance Genome Consortium,8,0.0404,8.06E-05,1.44E-03
+HALLMARK_GLYCOLYSIS,200,Mouse genes annotated to HALLMARK_GLYCOLYSIS based on orthology mappings provided by the Alliance Genome Consortium,8,0.04,8.64E-05,1.44E-03
+HALLMARK_HYPOXIA,199,Mouse genes annotated to HALLMARK_HYPOXIA based on orthology mappings provided by the Alliance Genome Consortium,7,0.0352,5.18E-04,5.18E-03
+HALLMARK_MTORC1_SIGNALING,199,Mouse genes annotated to HALLMARK_MTORC1_SIGNALING based on orthology mappings provided by the Alliance Genome Consortium,7,0.0352,5.18E-04,5.18E-03
+HALLMARK_PEROXISOME,102,Mouse genes annotated to HALLMARK_PEROXISOME based on orthology mappings provided by the Alliance Genome Consortium,5,0.049,7.54E-04,6.28E-03
+HALLMARK_BILE_ACID_METABOLISM,111,Mouse genes annotated to HALLMARK_BILE_ACID_METABOLISM based on orthology mappings provided by the Alliance Genome Consortium,5,0.045,1.10E-03,7.88E-03
+HALLMARK_ALLOGRAFT_REJECTION,192,Mouse genes annotated to HALLMARK_ALLOGRAFT_REJECTION based on orthology mappings provided by the Alliance Genome Consortium,6,0.0312,2.35E-03,1.40E-02
+HALLMARK_XENOBIOTIC_METABOLISM,196,Mouse genes annotated to HALLMARK_XENOBIOTIC_METABOLISM based on orthology mappings provided by the Alliance Genome Consortium,6,0.0306,2.60E-03,1.40E-02
+HALLMARK_APICAL_JUNCTION,199,Mouse genes annotated to HALLMARK_APICAL_JUNCTION based on orthology mappings provided by the Alliance Genome Consortium,6,0.0302,2.80E-03,1.40E-02

@@ -1,0 +1,322 @@
+
+Overlap Results
+
+Collection(s):	MH
+# overlaps shown:	10
+# genesets in collections:	50
+# genes in comparison (n):	297
+# genes in universe (N):	42726
+
+Gene Set Name	# Genes in Gene Set (K)	Description	# Genes in Overlap (k)	k/K	p-value	FDR q-value
+HALLMARK_IL2_STAT5_SIGNALING	199	Mouse genes annotated to HALLMARK_IL2_STAT5_SIGNALING based on orthology mappings provided by the Alliance Genome Consortium	13	0.0653	1.77E-9	8.87E-8
+HALLMARK_KRAS_SIGNALING_UP	198	Mouse genes annotated to HALLMARK_KRAS_SIGNALING_UP based on orthology mappings provided by the Alliance Genome Consortium	8	0.0404	8.06E-5	1.44E-3
+HALLMARK_GLYCOLYSIS	200	Mouse genes annotated to HALLMARK_GLYCOLYSIS based on orthology mappings provided by the Alliance Genome Consortium	8	0.0400	8.64E-5	1.44E-3
+HALLMARK_HYPOXIA	199	Mouse genes annotated to HALLMARK_HYPOXIA based on orthology mappings provided by the Alliance Genome Consortium	7	0.0352	5.18E-4	5.18E-3
+HALLMARK_MTORC1_SIGNALING	199	Mouse genes annotated to HALLMARK_MTORC1_SIGNALING based on orthology mappings provided by the Alliance Genome Consortium	7	0.0352	5.18E-4	5.18E-3
+HALLMARK_PEROXISOME	102	Mouse genes annotated to HALLMARK_PEROXISOME based on orthology mappings provided by the Alliance Genome Consortium	5	0.0490	7.54E-4	6.28E-3
+HALLMARK_BILE_ACID_METABOLISM	111	Mouse genes annotated to HALLMARK_BILE_ACID_METABOLISM based on orthology mappings provided by the Alliance Genome Consortium	5	0.0450	1.1E-3	7.88E-3
+HALLMARK_ALLOGRAFT_REJECTION	192	Mouse genes annotated to HALLMARK_ALLOGRAFT_REJECTION based on orthology mappings provided by the Alliance Genome Consortium	6	0.0312	2.35E-3	1.4E-2
+HALLMARK_XENOBIOTIC_METABOLISM	196	Mouse genes annotated to HALLMARK_XENOBIOTIC_METABOLISM based on orthology mappings provided by the Alliance Genome Consortium	6	0.0306	2.6E-3	1.4E-2
+HALLMARK_APICAL_JUNCTION	199	Mouse genes annotated to HALLMARK_APICAL_JUNCTION based on orthology mappings provided by the Alliance Genome Consortium	6	0.0302	2.8E-3	1.4E-2
+
+
+Gene/Gene Set Overlap Matrix
+
+Entrez Gene Id	Gene Symbol	Gene Description	HALLMARK_IL2_STAT5_SIGNALING	HALLMARK_KRAS_SIGNALING_UP	HALLMARK_GLYCOLYSIS	HALLMARK_HYPOXIA	HALLMARK_MTORC1_SIGNALING	HALLMARK_PEROXISOME	HALLMARK_BILE_ACID_METABOLISM	HALLMARK_ALLOGRAFT_REJECTION	HALLMARK_XENOBIOTIC_METABOLISM	HALLMARK_APICAL_JUNCTION
+20750	Spp1	secreted phosphoprotein 1 [Source:MGI Symbol;Acc:MGI:98389]	HALLMARK_IL2_STAT5_SIGNALING	HALLMARK_KRAS_SIGNALING_UP								
+18612	Etv4	ets variant 4 [Source:MGI Symbol;Acc:MGI:99423]	HALLMARK_IL2_STAT5_SIGNALING	HALLMARK_KRAS_SIGNALING_UP								
+20148	Dhrs3	dehydrogenase/reductase (SDR family) member 3 [Source:MGI Symbol;Acc:MGI:1315215]	HALLMARK_IL2_STAT5_SIGNALING					HALLMARK_PEROXISOME				
+17829	Muc1	mucin 1, transmembrane [Source:MGI Symbol;Acc:MGI:97231]	HALLMARK_IL2_STAT5_SIGNALING									
+21942	Tnfrsf9	tumor necrosis factor receptor superfamily, member 9 [Source:MGI Symbol;Acc:MGI:1101059]	HALLMARK_IL2_STAT5_SIGNALING									
+14064	F2rl2	coagulation factor II (thrombin) receptor-like 2 [Source:MGI Symbol;Acc:MGI:1298208]	HALLMARK_IL2_STAT5_SIGNALING									
+14256	Flt3l	FMS-like tyrosine kinase 3 ligand [Source:MGI Symbol;Acc:MGI:95560]	HALLMARK_IL2_STAT5_SIGNALING									
+14299	Ncs1	neuronal calcium sensor 1 [Source:MGI Symbol;Acc:MGI:109166]	HALLMARK_IL2_STAT5_SIGNALING									
+18619	Penk	preproenkephalin [Source:MGI Symbol;Acc:MGI:104629]	HALLMARK_IL2_STAT5_SIGNALING									
+20719	Serpinb6a	serine (or cysteine) peptidase inhibitor, clade B, member 6a [Source:MGI Symbol;Acc:MGI:103123]	HALLMARK_IL2_STAT5_SIGNALING									
+320204	Etfbkmt	electron transfer flavoprotein beta subunit lysine methyltransferase [Source:MGI Symbol;Acc:MGI:2443575]	HALLMARK_IL2_STAT5_SIGNALING									
+57319	Smpdl3a	sphingomyelin phosphodiesterase, acid-like 3A [Source:MGI Symbol;Acc:MGI:1931437]	HALLMARK_IL2_STAT5_SIGNALING									
+67547	Slc39a8	solute carrier family 39 (metal ion transporter), member 8 [Source:MGI Symbol;Acc:MGI:1914797]	HALLMARK_IL2_STAT5_SIGNALING									
+57875	Angptl4	angiopoietin-like 4 [Source:MGI Symbol;Acc:MGI:1888999]		HALLMARK_KRAS_SIGNALING_UP	HALLMARK_GLYCOLYSIS	HALLMARK_HYPOXIA						
+16176	Il1b	interleukin 1 beta [Source:MGI Symbol;Acc:MGI:96543]		HALLMARK_KRAS_SIGNALING_UP						HALLMARK_ALLOGRAFT_REJECTION		
+15200	Hbegf	heparin-binding EGF-like growth factor [Source:MGI Symbol;Acc:MGI:96070]		HALLMARK_KRAS_SIGNALING_UP								
+94176	Dock2	dedicator of cyto-kinesis 2 [Source:MGI Symbol;Acc:MGI:2149010]		HALLMARK_KRAS_SIGNALING_UP								
+19378	Aldh1a2	aldehyde dehydrogenase family 1, subfamily A2 [Source:MGI Symbol;Acc:MGI:107928]		HALLMARK_KRAS_SIGNALING_UP								
+233744	Spon1	spondin 1, (f-spondin) extracellular matrix protein [Source:MGI Symbol;Acc:MGI:2385287]		HALLMARK_KRAS_SIGNALING_UP								
+21810	Tgfbi	transforming growth factor, beta induced [Source:MGI Symbol;Acc:MGI:99959]			HALLMARK_GLYCOLYSIS	HALLMARK_HYPOXIA						HALLMARK_APICAL_JUNCTION
+15937	Ier3	immediate early response 3 [Source:MGI Symbol;Acc:MGI:104814]			HALLMARK_GLYCOLYSIS	HALLMARK_HYPOXIA						
+52231	Ankzf1	ankyrin repeat and zinc finger domain containing 1 [Source:MGI Symbol;Acc:MGI:1098746]			HALLMARK_GLYCOLYSIS	HALLMARK_HYPOXIA						
+107869	Cth	cystathionase (cystathionine gamma-lyase) [Source:MGI Symbol;Acc:MGI:1339968]			HALLMARK_GLYCOLYSIS		HALLMARK_MTORC1_SIGNALING					
+12124	Bik	BCL2-interacting killer [Source:MGI Symbol;Acc:MGI:1206591]			HALLMARK_GLYCOLYSIS							
+15932	Idua	iduronidase, alpha-L [Source:MGI Symbol;Acc:MGI:96418]			HALLMARK_GLYCOLYSIS							
+12615	Cenpa	centromere protein A [Source:MGI Symbol;Acc:MGI:88375]			HALLMARK_GLYCOLYSIS							
+76459	Car12	carbonic anhydrase 12 [Source:MGI Symbol;Acc:MGI:1923709]				HALLMARK_HYPOXIA						
+11717	Ampd3	adenosine monophosphate deaminase 3 [Source:MGI Symbol;Acc:MGI:1096344]				HALLMARK_HYPOXIA						
+75785	Klhl24	kelch-like 24 [Source:MGI Symbol;Acc:MGI:1923035]				HALLMARK_HYPOXIA						
+319554	Idi1	isopentenyl-diphosphate delta isomerase [Source:MGI Symbol;Acc:MGI:2442264]					HALLMARK_MTORC1_SIGNALING	HALLMARK_PEROXISOME	HALLMARK_BILE_ACID_METABOLISM			
+74754	Dhcr24	24-dehydrocholesterol reductase [Source:MGI Symbol;Acc:MGI:1922004]					HALLMARK_MTORC1_SIGNALING	HALLMARK_PEROXISOME	HALLMARK_BILE_ACID_METABOLISM			
+231070	Insig1	insulin induced gene 1 [Source:MGI Symbol;Acc:MGI:1916289]					HALLMARK_MTORC1_SIGNALING					HALLMARK_APICAL_JUNCTION
+18710	Pik3r3	phosphoinositide-3-kinase regulatory subunit 3 [Source:MGI Symbol;Acc:MGI:109277]					HALLMARK_MTORC1_SIGNALING					HALLMARK_APICAL_JUNCTION
+27053	Asns	asparagine synthetase [Source:MGI Symbol;Acc:MGI:1350929]					HALLMARK_MTORC1_SIGNALING					
+236539	Phgdh	3-phosphoglycerate dehydrogenase [Source:MGI Symbol;Acc:MGI:1355330]					HALLMARK_MTORC1_SIGNALING					
+224824	Pex6	peroxisomal biogenesis factor 6 [Source:MGI Symbol;Acc:MGI:2385054]						HALLMARK_PEROXISOME	HALLMARK_BILE_ACID_METABOLISM			
+12904	Crabp2	cellular retinoic acid binding protein II [Source:MGI Symbol;Acc:MGI:88491]						HALLMARK_PEROXISOME				
+19193	Pipox	pipecolic acid oxidase [Source:MGI Symbol;Acc:MGI:1197006]							HALLMARK_BILE_ACID_METABOLISM			
+20522	Slc23a1	solute carrier family 23 (nucleobase transporters), member 1 [Source:MGI Symbol;Acc:MGI:1341903]							HALLMARK_BILE_ACID_METABOLISM			
+20299	Ccl22	chemokine (C-C motif) ligand 22 [Source:MGI Symbol;Acc:MGI:1306779]								HALLMARK_ALLOGRAFT_REJECTION		
+14939	Gzmb	granzyme B [Source:MGI Symbol;Acc:MGI:109267]								HALLMARK_ALLOGRAFT_REJECTION		
+16161	Il12rb1	interleukin 12 receptor, beta 1 [Source:MGI Symbol;Acc:MGI:104579]								HALLMARK_ALLOGRAFT_REJECTION		
+16189	Il4	interleukin 4 [Source:MGI Symbol;Acc:MGI:96556]								HALLMARK_ALLOGRAFT_REJECTION		
+170823	Glmn	glomulin, FKBP associated protein [Source:MGI Symbol;Acc:MGI:2141180]								HALLMARK_ALLOGRAFT_REJECTION		
+17161	Maoa	monoamine oxidase A [Source:MGI Symbol;Acc:MGI:96915]									HALLMARK_XENOBIOTIC_METABOLISM	
+12583	Cdo1	cysteine dioxygenase 1, cytosolic [Source:MGI Symbol;Acc:MGI:105925]									HALLMARK_XENOBIOTIC_METABOLISM	
+233016	Blvrb	biliverdin reductase B (flavin reductase (NADPH)) [Source:MGI Symbol;Acc:MGI:2385271]									HALLMARK_XENOBIOTIC_METABOLISM	
+19128	Pros1	protein S (alpha) [Source:MGI Symbol;Acc:MGI:1095733]									HALLMARK_XENOBIOTIC_METABOLISM	
+18104	Nqo1	NAD(P)H dehydrogenase, quinone 1 [Source:MGI Symbol;Acc:MGI:103187]									HALLMARK_XENOBIOTIC_METABOLISM	
+209027	Pycr1	pyrroline-5-carboxylate reductase 1 [Source:MGI Symbol;Acc:MGI:2384795]									HALLMARK_XENOBIOTIC_METABOLISM	
+11472	Actn2	actinin alpha 2 [Source:MGI Symbol;Acc:MGI:109192]										HALLMARK_APICAL_JUNCTION
+12153	Bmp1	bone morphogenetic protein 1 [Source:MGI Symbol;Acc:MGI:88176]										HALLMARK_APICAL_JUNCTION
+104099	Itga9	integrin alpha 9 [Source:MGI Symbol;Acc:MGI:104756]										HALLMARK_APICAL_JUNCTION
+107652	Uap1	UDP-N-acetylglucosamine pyrophosphorylase 1 [Source:MGI Symbol;Acc:MGI:1334459]										
+17075	Epcam	epithelial cell adhesion molecule [Source:MGI Symbol;Acc:MGI:106653]										
+74325	Cltb	clathrin, light polypeptide (Lcb) [Source:MGI Symbol;Acc:MGI:1921575]										
+380684	Nefh	neurofilament, heavy polypeptide [Source:MGI Symbol;Acc:MGI:97309]										
+11975	Atp6v0a1	ATPase, H+ transporting, lysosomal V0 subunit A1 [Source:MGI Symbol;Acc:MGI:103286]										
+67182	Pdzk1ip1	PDZK1 interacting protein 1 [Source:MGI Symbol;Acc:MGI:1914432]										
+78908	Igsf3	immunoglobulin superfamily, member 3 [Source:MGI Symbol;Acc:MGI:1926158]										
+13603	Opn3	opsin 3 [Source:MGI Symbol;Acc:MGI:1338022]										
+20295	Ccl17	chemokine (C-C motif) ligand 17 [Source:MGI Symbol;Acc:MGI:1329039]										
+17122	Mxd4	Max dimerization protein 4 [Source:MGI Symbol;Acc:MGI:104991]										
+50708	H1f2	H1.2 linker histone, cluster member [Source:MGI Symbol;Acc:MGI:1931526]										
+71839	Osgin1	oxidative stress induced growth inhibitor 1 [Source:MGI Symbol;Acc:MGI:1919089]										
+104174	Gldc	glycine decarboxylase [Source:MGI Symbol;Acc:MGI:1341155]										
+68603	Pmvk	phosphomevalonate kinase [Source:MGI Symbol;Acc:MGI:1915853]										
+14357	Dtx1	deltex 1, E3 ubiquitin ligase [Source:MGI Symbol;Acc:MGI:1352744]										
+21416	Tcf7l2	transcription factor 7 like 2, T cell specific, HMG box [Source:MGI Symbol;Acc:MGI:1202879]										
+105445	Dock9	dedicator of cytokinesis 9 [Source:MGI Symbol;Acc:MGI:106321]										
+14696	Gnb4	guanine nucleotide binding protein (G protein), beta 4 [Source:MGI Symbol;Acc:MGI:104581]										
+30794	Pdlim4	PDZ and LIM domain 4 [Source:MGI Symbol;Acc:MGI:1353470]										
+272551	Gins2	GINS complex subunit 2 (Psf2 homolog) [Source:MGI Symbol;Acc:MGI:1921019]										
+80861	Dhx58	DEXH (Asp-Glu-X-His) box polypeptide 58 [Source:MGI Symbol;Acc:MGI:1931560]										
+80285	Parp9	poly (ADP-ribose) polymerase family, member 9 [Source:MGI Symbol;Acc:MGI:1933117]										
+246728	Oas2	2'-5' oligoadenylate synthetase 2 [Source:MGI Symbol;Acc:MGI:2180852]										
+672511	Rnf213	ring finger protein 213 [Source:MGI Symbol;Acc:MGI:1289196]										
+16858	Lgals7	lectin, galactose binding, soluble 7 [Source:MGI Symbol;Acc:MGI:1316742]										
+93685	Entpd7	ectonucleoside triphosphate diphosphohydrolase 7 [Source:MGI Symbol;Acc:MGI:2135885]										
+22036	Traip	TRAF-interacting protein [Source:MGI Symbol;Acc:MGI:1096377]										
+69065	Chac1	ChaC, cation transport regulator 1 [Source:MGI Symbol;Acc:MGI:1916315]										
+108961	E2f8	E2F transcription factor 8 [Source:MGI Symbol;Acc:MGI:1922038]										
+52592	Brms1l	breast cancer metastasis-suppressor 1-like [Source:MGI Symbol;Acc:MGI:1196337]										
+101497	Plekhg2	pleckstrin homology domain containing, family G (with RhoGef domain) member 2 [Source:MGI Symbol;Acc:MGI:2141874]										
+103172	Chchd10	coiled-coil-helix-coiled-coil-helix domain containing 10 [Source:MGI Symbol;Acc:MGI:2143558]										
+330192	Vps37b	vacuolar protein sorting 37B [Source:MGI Symbol;Acc:MGI:1916724]										
+100039968	Tmem35b	transmembrane protein 35B [Source:MGI Symbol;Acc:MGI:3758095]										
+100043133	9130023H24Rik	RIKEN cDNA 9130023H24 gene [Source:MGI Symbol;Acc:MGI:2442738]										
+100124367	Traj22	T cell receptor alpha joining 22 [Source:MGI Symbol;Acc:MGI:4439746]										
+100125248	Trbj1-1	T cell receptor beta joining 1-1 [Source:MGI Symbol;Acc:MGI:4439570]										
+100125258	Trbj2-4	T cell receptor beta joining 2-4 [Source:MGI Symbol;Acc:MGI:4439730]										
+100503043	Armcx4	armadillo repeat containing, X-linked 4 [Source:MGI Symbol;Acc:MGI:2147887]										
+102791	Tcta	T cell leukemia translocation altered gene [Source:MGI Symbol;Acc:MGI:1918829]										
+103765	Tmem17	transmembrane protein 17 [Source:MGI Symbol;Acc:MGI:2144205]										
+104215	Rhoq	ras homolog family member Q [Source:MGI Symbol;Acc:MGI:1931553]										
+105349	Akr1c18	aldo-keto reductase family 1, member C18 [Source:MGI Symbol;Acc:MGI:2145420]										
+108097	Prkab2	protein kinase, AMP-activated, beta 2 non-catalytic subunit [Source:MGI Symbol;Acc:MGI:1336185]										
+108927	Lhfp	lipoma HMGIC fusion partner [Source:MGI Symbol;Acc:MGI:1920048]										
+108995	Tbc1d10c	TBC1 domain family, member 10c [Source:MGI Symbol;Acc:MGI:1922072]										
+109050	Inka2	inka box actin regulator 2 [Source:MGI Symbol;Acc:MGI:1923497]										
+110524	Dgkq	diacylglycerol kinase, theta [Source:MGI Symbol;Acc:MGI:102918]										
+112419	Ifit1bl2	interferon induced protein with tetratricopeptide repeats 1B like 2 [Source:MGI Symbol;Acc:MGI:2148249]										
+11307	Abcg1	ATP binding cassette subfamily G member 1 [Source:MGI Symbol;Acc:MGI:107704]										
+114606	Tle6	transducin-like enhancer of split 6 [Source:MGI Symbol;Acc:MGI:2149593]										
+11745	Anxa3	annexin A3 [Source:MGI Symbol;Acc:MGI:1201378]										
+121811722	Smim36	small integral membrane protein 36 [Source:MGI Symbol;Acc:MGI:5804831]										
+12361	Cask	calcium/calmodulin-dependent serine protein kinase (MAGUK family) [Source:MGI Symbol;Acc:MGI:1309489]										
+12728	Clcn5	chloride channel, voltage-sensitive 5 [Source:MGI Symbol;Acc:MGI:99486]										
+13136	Cd55	CD55 molecule, decay accelerating factor for complement [Source:MGI Symbol;Acc:MGI:104850]										
+13417	Dnah8	dynein, axonemal, heavy chain 8 [Source:MGI Symbol;Acc:MGI:107714]										
+13549	Dyrk1b	dual-specificity tyrosine-(Y)-phosphorylation regulated kinase 1b [Source:MGI Symbol;Acc:MGI:1330302]										
+13618	Ednrb	endothelin receptor type B [Source:MGI Symbol;Acc:MGI:102720]										
+13848	Ephb6	Eph receptor B6 [Source:MGI Symbol;Acc:MGI:1096338]										
+140481	Man2a2	mannosidase 2, alpha 2 [Source:MGI Symbol;Acc:MGI:2150656]										
+14198	Fhit	fragile histidine triad gene [Source:MGI Symbol;Acc:MGI:1277947]										
+14287	Fpgs	folylpolyglutamyl synthetase [Source:MGI Symbol;Acc:MGI:95576]										
+14371	Fzd9	frizzled class receptor 9 [Source:MGI Symbol;Acc:MGI:1313278]										
+14862	Gstm1	glutathione S-transferase, mu 1 [Source:MGI Symbol;Acc:MGI:95860]										
+15013	H2-Q2	histocompatibility 2, Q region locus 2 [Source:MGI Symbol;Acc:MGI:95931]										
+15586	Hyal1	hyaluronoglucosaminidase 1 [Source:MGI Symbol;Acc:MGI:96298]										
+16513	Kcnj10	potassium inwardly-rectifying channel, subfamily J, member 10 [Source:MGI Symbol;Acc:MGI:1194504]										
+17281	Fyco1	FYVE and coiled-coil domain containing 1 [Source:MGI Symbol;Acc:MGI:107277]										
+17357	Marcksl1	MARCKS-like 1 [Source:MGI Symbol;Acc:MGI:97143]										
+17425	Foxk1	forkhead box K1 [Source:MGI Symbol;Acc:MGI:1347488]										
+17472	Gbp4	guanylate binding protein 4 [Source:MGI Symbol;Acc:MGI:97072]										
+18054	Ngp	neutrophilic granule protein [Source:MGI Symbol;Acc:MGI:105983]										
+18574	Pde1b	phosphodiesterase 1B, Ca2+-calmodulin dependent [Source:MGI Symbol;Acc:MGI:97523]										
+18739	Pitpnm1	phosphatidylinositol transfer protein, membrane-associated 1 [Source:MGI Symbol;Acc:MGI:1197524]										
+18824	Plp2	proteolipid protein 2 [Source:MGI Symbol;Acc:MGI:1298382]										
+19411	Rarg	retinoic acid receptor, gamma [Source:MGI Symbol;Acc:MGI:97858]										
+194908	Pld6	phospholipase D family, member 6 [Source:MGI Symbol;Acc:MGI:2687283]										
+20167	Rtn2	reticulon 2 (Z-band associated protein) [Source:MGI Symbol;Acc:MGI:107612]										
+20303	Ccl4	chemokine (C-C motif) ligand 4 [Source:MGI Symbol;Acc:MGI:98261]										
+20365	Serf1	small EDRK-rich factor 1 [Source:MGI Symbol;Acc:MGI:1337114]										
+20420	Shd	src homology 2 domain-containing transforming protein D [Source:MGI Symbol;Acc:MGI:1099461]										
+20677	Sox4	SRY (sex determining region Y)-box 4 [Source:MGI Symbol;Acc:MGI:98366]										
+20728	Spic	Spi-C transcription factor (Spi-1/PU.1 related) [Source:MGI Symbol;Acc:MGI:1341168]										
+208292	Zfp871	zinc finger protein 871 [Source:MGI Symbol;Acc:MGI:1921793]										
+208691	Eif5a2	eukaryotic translation initiation factor 5A2 [Source:MGI Symbol;Acc:MGI:1933735]										
+209032	Zc3hav1l	zinc finger CCCH-type, antiviral 1-like [Source:MGI Symbol;Acc:MGI:2443387]										
+209131	Snx30	sorting nexin family member 30 [Source:MGI Symbol;Acc:MGI:2443882]										
+213011	Zfp583	zinc finger protein 583 [Source:MGI Symbol;Acc:MGI:2682297]										
+213765	Nutm1	NUT midline carcinoma, family member 1 [Source:MGI Symbol;Acc:MGI:2661384]										
+214084	Slc18a2	solute carrier family 18 (vesicular monoamine), member 2 [Source:MGI Symbol;Acc:MGI:106677]										
+214230	Pak6	p21 (RAC1) activated kinase 6 [Source:MGI Symbol;Acc:MGI:2679420]										
+216134	Pdxk	pyridoxal (pyridoxine, vitamin B6) kinase [Source:MGI Symbol;Acc:MGI:1351869]										
+216445	Arhgap9	Rho GTPase activating protein 9 [Source:MGI Symbol;Acc:MGI:2143764]										
+217340	Rnf157	ring finger protein 157 [Source:MGI Symbol;Acc:MGI:2442484]										
+21833	Thra	thyroid hormone receptor alpha [Source:MGI Symbol;Acc:MGI:98742]										
+219150	Hmbox1	homeobox containing 1 [Source:MGI Symbol;Acc:MGI:2445066]										
+22286	Utf1	undifferentiated embryonic cell transcription factor 1 [Source:MGI Symbol;Acc:MGI:1276125]										
+22295	Cdh23	cadherin 23 (otocadherin) [Source:MGI Symbol;Acc:MGI:1890219]										
+223989	Marf1	meiosis regulator and mRNA stability 1 [Source:MGI Symbol;Acc:MGI:2444505]										
+225872	Npas4	neuronal PAS domain protein 4 [Source:MGI Symbol;Acc:MGI:2664186]										
+227094	Nemp2	nuclear envelope integral membrane protein 2 [Source:MGI Symbol;Acc:MGI:2444113]										
+227627	Obp2a	odorant binding protein 2A [Source:MGI Symbol;Acc:MGI:2387617]										
+227693	Zer1	zyg-11 related, cell cycle regulator [Source:MGI Symbol;Acc:MGI:2442511]										
+229700	Rbm15	RNA binding motif protein 15 [Source:MGI Symbol;Acc:MGI:2443205]										
+229905	Kyat3	kynurenine aminotransferase 3 [Source:MGI Symbol;Acc:MGI:2677849]										
+230770	Tmem39b	transmembrane protein 39b [Source:MGI Symbol;Acc:MGI:2682939]										
+230815	Man1c1	mannosidase, alpha, class 1C, member 1 [Source:MGI Symbol;Acc:MGI:2446214]										
+230822	Ncmap	noncompact myelin associated protein [Source:MGI Symbol;Acc:MGI:2444888]										
+231861	Tnrc18	trinucleotide repeat containing 18 [Source:MGI Symbol;Acc:MGI:3648294]										
+232943	Klc3	kinesin light chain 3 [Source:MGI Symbol;Acc:MGI:1277971]										
+232970	Phldb3	pleckstrin homology like domain, family B, member 3 [Source:MGI Symbol;Acc:MGI:3642959]										
+234155	Mboat4	membrane bound O-acyltransferase domain containing 4 [Source:MGI Symbol;Acc:MGI:2685017]										
+234730	Fcsk	fucose kinase [Source:MGI Symbol;Acc:MGI:1916071]										
+235439	Herc1	HECT and RLD domain containing E3 ubiquitin protein ligase family member 1 [Source:MGI Symbol;Acc:MGI:2384589]										
+236573	Gbp9	guanylate-binding protein 9 [Source:MGI Symbol;Acc:MGI:3605620]										
+236920	Stard8	START domain containing 8 [Source:MGI Symbol;Acc:MGI:2448556]										
+23887	Ggt5	gamma-glutamyltransferase 5 [Source:MGI Symbol;Acc:MGI:1346063]										
+239096	Cdh24	cadherin-like 24 [Source:MGI Symbol;Acc:MGI:1928330]										
+239319	Card6	caspase recruitment domain family, member 6 [Source:MGI Symbol;Acc:MGI:3032959]										
+23948	Mmp17	matrix metallopeptidase 17 [Source:MGI Symbol;Acc:MGI:1346076]										
+239554	Foxred2	FAD-dependent oxidoreductase domain containing 2 [Source:MGI Symbol;Acc:MGI:106315]										
+23962	Oasl2	2'-5' oligoadenylate synthetase-like 2 [Source:MGI Symbol;Acc:MGI:1344390]										
+240327	Gm4951	predicted gene 4951 [Source:MGI Symbol;Acc:MGI:3644953]										
+241066	Carf	calcium response factor [Source:MGI Symbol;Acc:MGI:2182269]										
+241525	Ypel4	yippee like 4 [Source:MGI Symbol;Acc:MGI:3605071]										
+241576	Ldlrad3	low density lipoprotein receptor class A domain containing 3 [Source:MGI Symbol;Acc:MGI:2138856]										
+241638	Lzts3	leucine zipper, putative tumor suppressor family member 3 [Source:MGI Symbol;Acc:MGI:2656976]										
+243373	AI854703	expressed sequence AI854703 [Source:MGI Symbol;Acc:MGI:2141510]										
+244550	Podnl1	podocan-like 1 [Source:MGI Symbol;Acc:MGI:2685352]										
+245240	9930111J21Rik2	RIKEN cDNA 9930111J21 gene 2 [Source:MGI Symbol;Acc:MGI:3711310]										
+245522	Zc4h2	zinc finger, C4H2 domain containing [Source:MGI Symbol;Acc:MGI:2679294]										
+26390	Mapkbp1	mitogen-activated protein kinase binding protein 1 [Source:MGI Symbol;Acc:MGI:1347004]										
+269180	Inpp4a	inositol polyphosphate-4-phosphatase, type I [Source:MGI Symbol;Acc:MGI:1931123]										
+27405	Abcg3	ATP binding cassette subfamily G member 3 [Source:MGI Symbol;Acc:MGI:1351624]										
+278240	Spin2c	spindlin family, member 2C [Source:MGI Symbol;Acc:MGI:3605548]										
+279766	Rhbdd3	rhomboid domain containing 3 [Source:MGI Symbol;Acc:MGI:2444684]										
+30963	Hacd1	3-hydroxyacyl-CoA dehydratase 1 [Source:MGI Symbol;Acc:MGI:1353592]										
+319188	H2bc22	H2B clustered histone 22 [Source:MGI Symbol;Acc:MGI:2448409]										
+319583	Lig4	ligase IV, DNA, ATP-dependent [Source:MGI Symbol;Acc:MGI:1335098]										
+319748	Zfp865	zinc finger protein 865 [Source:MGI Symbol;Acc:MGI:2442656]										
+319953	Ttll1	tubulin tyrosine ligase-like 1 [Source:MGI Symbol;Acc:MGI:2443047]										
+320404	Itpkb	inositol 1,4,5-trisphosphate 3-kinase B [Source:MGI Symbol;Acc:MGI:109235]										
+320685	Dctd	dCMP deaminase [Source:MGI Symbol;Acc:MGI:2444529]										
+329015	Atg2a	autophagy related 2A [Source:MGI Symbol;Acc:MGI:1916291]										
+329650	Med12l	mediator complex subunit 12-like [Source:MGI Symbol;Acc:MGI:2139916]										
+329877	Dennd4c	DENN domain containing 4C [Source:MGI Symbol;Acc:MGI:1914769]										
+330122	Cxcl3	chemokine (C-X-C motif) ligand 3 [Source:MGI Symbol;Acc:MGI:3037818]										
+331487	Uprt	uracil phosphoribosyltransferase [Source:MGI Symbol;Acc:MGI:2685620]										
+353156	Egfl7	EGF-like domain 7 [Source:MGI Symbol;Acc:MGI:2449923]										
+381073	Npw	neuropeptide W [Source:MGI Symbol;Acc:MGI:2685781]										
+381101	Dnph1	2'-deoxynucleoside 5'-phosphate N-hydrolase 1 [Source:MGI Symbol;Acc:MGI:3039376]										
+381204	Naaladl1	N-acetylated alpha-linked acidic dipeptidase-like 1 [Source:MGI Symbol;Acc:MGI:2685810]										
+381259	Tmem237	transmembrane protein 237 [Source:MGI Symbol;Acc:MGI:2138365]										
+381417	Slc28a2b	solute carrier family 28 member 2b [Source:MGI Symbol;Acc:MGI:3702173]										
+381694	B3glct	beta-3-glucosyltransferase [Source:MGI Symbol;Acc:MGI:2685903]										
+382118	Zkscan7	zinc finger with KRAB and SCAN domains 7 [Source:MGI Symbol;Acc:MGI:3040678]										
+432572	Specc1	sperm antigen with calponin homology and coiled-coil domains 1 [Source:MGI Symbol;Acc:MGI:2442356]										
+433022	Plcxd2	phosphatidylinositol-specific phospholipase C, X domain containing 2 [Source:MGI Symbol;Acc:MGI:3647874]										
+433470	AA467197	expressed sequence AA467197 [Source:MGI Symbol;Acc:MGI:3034182]										
+433904	Ociad2	OCIA domain containing 2 [Source:MGI Symbol;Acc:MGI:1916377]										
+434179	Zfp975	zinc finger protein 975 [Source:MGI Symbol;Acc:MGI:3648690]										
+50929	Il22	interleukin 22 [Source:MGI Symbol;Acc:MGI:1355307]										
+50935	St6galnac6	ST6 (alpha-N-acetyl-neuraminyl-2,3-beta-galactosyl-1,3)-N-acetylgalactosaminide alpha-2,6-sialyltransferase 6 [Source:MGI Symbol;Acc:MGI:1355316]										
+51791	Rgs14	regulator of G-protein signaling 14 [Source:MGI Symbol;Acc:MGI:1859709]										
+52398	Septin11	septin 11 [Source:MGI Symbol;Acc:MGI:1277214]										
+52466	Slc46a1	solute carrier family 46, member 1 [Source:MGI Symbol;Acc:MGI:1098733]										
+52679	E2f7	E2F transcription factor 7 [Source:MGI Symbol;Acc:MGI:1289147]										
+53857	Tuba8	tubulin, alpha 8 [Source:MGI Symbol;Acc:MGI:1858225]										
+54219	Cd320	CD320 antigen [Source:MGI Symbol;Acc:MGI:1860083]										
+54369	Nme6	NME/NM23 nucleoside diphosphate kinase 6 [Source:MGI Symbol;Acc:MGI:1861676]										
+56448	Cyp2d22	cytochrome P450, family 2, subfamily d, polypeptide 22 [Source:MGI Symbol;Acc:MGI:1929474]										
+56490	Zbtb20	zinc finger and BTB domain containing 20 [Source:MGI Symbol;Acc:MGI:1929213]										
+56554	Raet1d	retinoic acid early transcript delta [Source:MGI Symbol;Acc:MGI:1861032]										
+56619	Clec4e	C-type lectin domain family 4, member e [Source:MGI Symbol;Acc:MGI:1861232]										
+57440	Ehd3	EH-domain containing 3 [Source:MGI Symbol;Acc:MGI:1928900]										
+58520	Erg28	ergosterol biosynthesis 28 [Source:MGI Symbol;Acc:MGI:1915571]										
+620913	Gm12185	predicted gene 12185 [Source:MGI Symbol;Acc:MGI:3652173]										
+626578	Gbp10	guanylate-binding protein 10 [Source:MGI Symbol;Acc:MGI:4359647]										
+634650	Gbp11	guanylate binding protein 11 [Source:MGI Symbol;Acc:MGI:3646307]										
+636741	Zfp964	zinc finger protein 964 [Source:MGI Symbol;Acc:MGI:3646490]										
+65086	Lpar3	lysophosphatidic acid receptor 3 [Source:MGI Symbol;Acc:MGI:1929469]										
+66129	Prxl2c	peroxiredoxin like 2C [Source:MGI Symbol;Acc:MGI:1913379]										
+66401	Nudt2	nudix hydrolase 2 [Source:MGI Symbol;Acc:MGI:1913651]										
+66441	Magohb	mago homolog B, exon junction complex core component [Source:MGI Symbol;Acc:MGI:1913691]										
+66461	Ptpmt1	protein tyrosine phosphatase, mitochondrial 1 [Source:MGI Symbol;Acc:MGI:1913711]										
+664968	Tmem238	transmembrane protein 238 [Source:MGI Symbol;Acc:MGI:1922935]										
+66611	Ribc1	RIB43A domain with coiled-coils 1 [Source:MGI Symbol;Acc:MGI:1913861]										
+666311	Zscan25	zinc finger and SCAN domain containing 25 [Source:MGI Symbol;Acc:MGI:3647079]										
+66664	Tmem41a	transmembrane protein 41a [Source:MGI Symbol;Acc:MGI:1913914]										
+66715	Henmt1	HEN1 methyltransferase homolog 1 (Arabidopsis) [Source:MGI Symbol;Acc:MGI:1913965]										
+667214	9930111J21Rik1	RIKEN cDNA 9930111J21 gene 1 [Source:MGI Symbol;Acc:MGI:3041173]										
+667370	Ifit3b	interferon-induced protein with tetratricopeptide repeats 3B [Source:MGI Symbol;Acc:MGI:3698419]										
+667373	Ifit1bl1	interferon induced protein with tetratricpeptide repeats 1B like 1 [Source:MGI Symbol;Acc:MGI:3650685]										
+66931	1700010I14Rik	RIKEN cDNA 1700010I14 gene [Source:MGI Symbol;Acc:MGI:1914181]										
+67046	Tbc1d7	TBC1 domain family, member 7 [Source:MGI Symbol;Acc:MGI:1914296]										
+67235	Zkscan14	zinc finger with KRAB and SCAN domains 14 [Source:MGI Symbol;Acc:MGI:1914485]										
+67533	Ppfibp1	PTPRF interacting protein, binding protein 1 (liprin beta 1) [Source:MGI Symbol;Acc:MGI:1914783]										
+67800	Dgat2	diacylglycerol O-acyltransferase 2 [Source:MGI Symbol;Acc:MGI:1915050]										
+67911	Zfp169	zinc finger protein 169 [Source:MGI Symbol;Acc:MGI:1915161]										
+68404	Nrn1	neuritin 1 [Source:MGI Symbol;Acc:MGI:1915654]										
+68721	Cfap68	cilia and flagella associated protein 68 [Source:MGI Symbol;Acc:MGI:1915971]										
+68876	Atp23	ATP23 metallopeptidase and ATP synthase assembly factor homolog [Source:MGI Symbol;Acc:MGI:1916984]										
+68891	Cd177	CD177 antigen [Source:MGI Symbol;Acc:MGI:1916141]										
+68968	Cdan1	congenital dyserythropoietic anemia, type I (human) [Source:MGI Symbol;Acc:MGI:1916218]										
+69635	Dapk1	death associated protein kinase 1 [Source:MGI Symbol;Acc:MGI:1916885]										
+69747	Zswim7	zinc finger SWIM-type containing 7 [Source:MGI Symbol;Acc:MGI:1916997]										
+70300	Fuz	fuzzy planar cell polarity protein [Source:MGI Symbol;Acc:MGI:1917550]										
+70325	Pigw	phosphatidylinositol glycan anchor biosynthesis, class W [Source:MGI Symbol;Acc:MGI:1917575]										
+70382	Kctd2	potassium channel tetramerisation domain containing 2 [Source:MGI Symbol;Acc:MGI:1917632]										
+70451	Dhrs13	dehydrogenase/reductase (SDR family) member 13 [Source:MGI Symbol;Acc:MGI:1917701]										
+70458	2610318N02Rik	RIKEN cDNA 2610318N02 gene [Source:MGI Symbol;Acc:MGI:1917708]										
+70785	Dennd1c	DENN domain containing 1C [Source:MGI Symbol;Acc:MGI:1918035]										
+70891	Spdya	speedy/RINGO cell cycle regulator family, member A [Source:MGI Symbol;Acc:MGI:1918141]										
+70984	4931406C07Rik	RIKEN cDNA 4931406C07 gene [Source:MGI Symbol;Acc:MGI:1918234]										
+71640	Zfp949	zinc finger protein 949 [Source:MGI Symbol;Acc:MGI:1918890]										
+71776	Tha1	threonine aldolase 1 [Source:MGI Symbol;Acc:MGI:1919026]										
+71804	Mtfr2	mitochondrial fission regulator 2 [Source:MGI Symbol;Acc:MGI:1919054]										
+71846	Syce2	synaptonemal complex central element protein 2 [Source:MGI Symbol;Acc:MGI:1919096]										
+71890	Mad2l2	MAD2 mitotic arrest deficient-like 2 [Source:MGI Symbol;Acc:MGI:1919140]										
+71924	Tube1	tubulin, epsilon 1 [Source:MGI Symbol;Acc:MGI:1919174]										
+71988	Esco2	establishment of sister chromatid cohesion N-acetyltransferase 2 [Source:MGI Symbol;Acc:MGI:1919238]										
+72194	Fbxl20	F-box and leucine-rich repeat protein 20 [Source:MGI Symbol;Acc:MGI:1919444]										
+72315	Ccdc74a	coiled-coil domain containing 74A [Source:MGI Symbol;Acc:MGI:1919565]										
+72415	Sgo1	shugoshin 1 [Source:MGI Symbol;Acc:MGI:1919665]										
+72587	Pan3	PAN3 poly(A) specific ribonuclease subunit [Source:MGI Symbol;Acc:MGI:1919837]										
+73739	Cby1	chibby family member 1, beta catenin antagonist [Source:MGI Symbol;Acc:MGI:1920989]										
+74154	Unkl	unkempt family like zinc finger [Source:MGI Symbol;Acc:MGI:1921404]										
+74377	Hsf2bp	heat shock transcription factor 2 binding protein [Source:MGI Symbol;Acc:MGI:1921627]										
+74464	Zswim5	zinc finger SWIM-type containing 5 [Source:MGI Symbol;Acc:MGI:1921714]										
+75507	Pou5f2	POU domain class 5, transcription factor 2 [Source:MGI Symbol;Acc:MGI:1922757]										
+75735	Pank1	pantothenate kinase 1 [Source:MGI Symbol;Acc:MGI:1922985]										
+75870	Tcam1	testicular cell adhesion molecule 1 [Source:MGI Symbol;Acc:MGI:1923120]										
+76737	Creld2	cysteine-rich with EGF-like domains 2 [Source:MGI Symbol;Acc:MGI:1923987]										
+76843	Dtl	denticleless E3 ubiquitin protein ligase [Source:MGI Symbol;Acc:MGI:1924093]										
+77041	Arsk	arylsulfatase K [Source:MGI Symbol;Acc:MGI:1924291]										
+77128	Crebrf	CREB3 regulatory factor [Source:MGI Symbol;Acc:MGI:1924378]										
+77595	Nup210l	nucleoporin 210-like [Source:MGI Symbol;Acc:MGI:1924845]										
+77951	Cyp20a1	cytochrome P450, family 20, subfamily a, polypeptide 1 [Source:MGI Symbol;Acc:MGI:1925201]										
+78266	Zfp687	zinc finger protein 687 [Source:MGI Symbol;Acc:MGI:1925516]										
+78309	Cul9	cullin 9 [Source:MGI Symbol;Acc:MGI:1925559]										
+78801	Ak7	adenylate kinase 7 [Source:MGI Symbol;Acc:MGI:1926051]										
+80515	Rnf227	ring finger protein 227 [Source:MGI Symbol;Acc:MGI:1915359]										
+83382	Siglece	sialic acid binding Ig-like lectin E [Source:MGI Symbol;Acc:MGI:1932475]										

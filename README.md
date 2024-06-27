@@ -1,5 +1,5 @@
 # \<P435 T cell differentiation with Dryk1a knockout and harmine treatment\>
-### Author: Matt Dufort
+### Author: Matt Dufort / Thomas Edwards
 ### Investigator: Bernard Khor
 ### Date: 2022-02-10
   

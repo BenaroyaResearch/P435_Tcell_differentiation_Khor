@@ -1,6 +1,6 @@
 ---
 title: "P435: T cell differentiation with Dyrk1a inhibition by harmine"
-author: "Matt Dufort"
+author: "Matt Dufort + Thomas Edwards"
 output:
   html_document:
     toc: true
@@ -339,6 +339,7 @@ design <-
 
 ```{r loadGeneLists}
 # Alex Hu's approach from P435-2
+# note: only necessary for GSEA with hallmark/c7 gene lists. Very slow!
 library(msigdbr)
 
 untidy_geneset <- function(gs) {
@@ -1863,6 +1864,13 @@ NoHar5hVsNaive_HarVsNoHar5h_intersection_counterregulated <- merged_df.tmp %>%
 # Save the dataframe to a CSV file
 write.csv(NoHar5hVsNaive_HarVsNoHar5h_intersection_counterregulated, file = paste0(dataDirOutput, "/NoHar5hVsNaive_HarVsNoHar5h_intersection_counterregulated.csv"))
 
+# Filter the dataframe
+NoHar5hVsNaive_HarVsNoHar5h_intersection_counterregulated_sign <- merged_df.tmp %>%
+  filter(((adj.P.Val1 < 0.05 & abs(logFC1) > 1) & (adj.P.Val2 < 0.05 & abs(logFC2) > 1)) & (sign(logFC1) != sign(logFC2)))
+
+# Save the dataframe to a CSV file
+write.csv(NoHar5hVsNaive_HarVsNoHar5h_intersection_counterregulated_sign, file = paste0(dataDirOutput, "/NoHar5hVsNaive_HarVsNoHar5h_intersection_counterregulated_bySign.csv"))
+
 rm_tmp(ask = FALSE)
 ```
 
@@ -2014,6 +2022,52 @@ outfile_pdf <- paste0(dirPlots, "/", dataDate, "_", "MSigDB_dotplot_counterregGe
 MSigDBResult$log_p_value <- -log10(MSigDBResult$p_value)
 
 dotPlot.tmp <- ggplot(MSigDBResult, aes(x = k_div_K, y = reorder(GeneSetName, k_div_K), size = NumGenesinOverlap_k, color = log_p_value)) +
+  geom_point() +
+  scale_size_area(max_size = 7) +  # Use scale_size_area
+  scale_color_gradient(low = "blue", high = "red", breaks = c(8, 6, 4, 2)) +  # Set the breaks to 8, 6, 4, 2
+  theme_minimal() +
+  labs(title = "MSigDB GSEA",
+    x = "Gene Ratio",
+    y = "Gene Set Name",
+    color = expression(-log[10]("p-value")),  # Use expression() to create the subscript
+    size = "Overlap Count") +
+  guides(color = guide_colorbar(nbin = 4))  # Set the number of bins to 4
+
+# Save the plot as a PNG
+png(outfile_png, width = 7, height = 5.5, units = "in", res = 600)
+print(dotPlot.tmp)
+dev.off()
+
+# Save the plot as a PDF
+pdf(outfile_pdf, width = 7, height = 5.5)
+print(dotPlot.tmp)
+dev.off()
+
+rm_tmp(ask = FALSE)
+```
+
+```{r MSigDB_output_workaround_bySign}
+# nothing in R seems to reproduce MSigDB GSEA results, so we'll load in the output.tsv and try from there....
+
+# load MSigDB GSEA output.tsv
+MSigDBResult <- read_csv(paste0(dataDirSaved, "/MSigDB-GSEA_output_counterRegGenes_logFCsign.csv"))
+
+# for dotplot, we will need genRatio, p.adjust, counts?, module name
+# Convert the columns to the correct data types
+MSigDBResult$k_div_K <- as.numeric(MSigDBResult$k_div_K)
+MSigDBResult$p_value <- as.numeric(MSigDBResult$p_value)
+MSigDBResult$NumGenesInOverlap_k <- as.numeric(MSigDBResult$NumGenesInOverlap_k)
+
+# Sort the data frame by k_div_K
+MSigDBResult <- MSigDBResult[order(MSigDBResult$k_div_K), ]
+
+outfile_png <- paste0(dirPlots, "/", dataDate, "_", "MSigDB_dotplot_counterregGenes_bySign", ".png")
+outfile_pdf <- paste0(dirPlots, "/", dataDate, "_", "MSigDB_dotplot_counterregGenes_bySign", ".pdf")
+
+# Create a new column for the transformed p-values
+MSigDBResult$log_p_value <- -log10(MSigDBResult$p_value)
+
+dotPlot.tmp <- ggplot(MSigDBResult, aes(x = k_div_K, y = reorder(geneSetName, k_div_K), size = NumGenesInOverlap_k, color = log_p_value)) +
   geom_point() +
   scale_size_area(max_size = 7) +  # Use scale_size_area
   scale_color_gradient(low = "blue", high = "red", breaks = c(8, 6, 4, 2)) +  # Set the breaks to 8, 6, 4, 2

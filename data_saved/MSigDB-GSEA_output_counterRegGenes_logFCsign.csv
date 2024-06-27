@@ -1,0 +1,11 @@
+﻿geneSetName,numGenesInSet_K,Description,NumGenesInOverlap_k,k_div_K,p_value,FDR_q_value
+HALLMARK_IL2_STAT5_SIGNALING,199,Mouse genes annotated to HALLMARK_IL2_STAT5_SIGNALING based on orthology mappings provided by the Alliance Genome Consortium,11,0.0553,6.24E-08,3.12E-06
+HALLMARK_KRAS_SIGNALING_UP,198,Mouse genes annotated to HALLMARK_KRAS_SIGNALING_UP based on orthology mappings provided by the Alliance Genome Consortium,8,0.0404,3.93E-05,9.82E-04
+HALLMARK_MTORC1_SIGNALING,199,Mouse genes annotated to HALLMARK_MTORC1_SIGNALING based on orthology mappings provided by the Alliance Genome Consortium,7,0.0352,2.80E-04,4.67E-03
+HALLMARK_PEROXISOME,102,Mouse genes annotated to HALLMARK_PEROXISOME based on orthology mappings provided by the Alliance Genome Consortium,5,0.049,4.75E-04,5.93E-03
+HALLMARK_BILE_ACID_METABOLISM,111,Mouse genes annotated to HALLMARK_BILE_ACID_METABOLISM based on orthology mappings provided by the Alliance Genome Consortium,5,0.045,6.98E-04,6.98E-03
+HALLMARK_XENOBIOTIC_METABOLISM,196,Mouse genes annotated to HALLMARK_XENOBIOTIC_METABOLISM based on orthology mappings provided by the Alliance Genome Consortium,6,0.0306,1.56E-03,1.23E-02
+HALLMARK_GLYCOLYSIS,200,Mouse genes annotated to HALLMARK_GLYCOLYSIS based on orthology mappings provided by the Alliance Genome Consortium,6,0.03,1.72E-03,1.23E-02
+HALLMARK_UV_RESPONSE_UP,156,Mouse genes annotated to HALLMARK_UV_RESPONSE_UP based on orthology mappings provided by the Alliance Genome Consortium,5,0.0321,3.13E-03,1.78E-02
+HALLMARK_ANDROGEN_RESPONSE,96,Mouse genes annotated to HALLMARK_ANDROGEN_RESPONSE based on orthology mappings provided by the Alliance Genome Consortium,4,0.0417,3.20E-03,1.78E-02
+HALLMARK_APOPTOSIS,161,Mouse genes annotated to HALLMARK_APOPTOSIS based on orthology mappings provided by the Alliance Genome Consortium,5,0.0311,3.58E-03,1.79E-02

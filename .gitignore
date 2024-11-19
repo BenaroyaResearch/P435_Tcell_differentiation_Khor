@@ -1,0 +1,25 @@
+# Ignore R data files
+*.RData
+*.rds
+
+# Ignore fastq/counts files
+*counts.txt
+*fastq.gz
+
+# Ignore R history files
+.Rhistory
+.Rapp.history
+
+# Ignore temporary files
+*.tmp
+*.swp
+*.zip
+
+# Ignore powerpoint presentations
+*.pptx
+
+# Ignore figures
+*.pdf
+*.png
+
+# Ignore directories

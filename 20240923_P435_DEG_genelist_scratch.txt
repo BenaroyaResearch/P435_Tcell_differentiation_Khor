@@ -1,0 +1,30 @@
+20240923_P435_DEG_genelist_scratch
+
+
+272:
+NoHar5hVsNaive_HarVsNoHar5h_intersection_counterregulated_bySign.csv is our counterReg gene sig.
+NoHar5hVsNaive = "Th17, no Harmine - Naive, 5h" (stim_none_5h - no_stim_none_0)
+HarVsNoHar5h = "Harmine - No Harmine, 5h" ((stim_10uM_Harmine_5h) - (stim_none_5h))
+
+482
+HarVsNoHar5h_NoHar5hVsNaive_intersection
+
+HarVsNoHar5h_DE.xlsx
+NoHar5hVsNaive_DE.xlsx
+
+For counterRegGenes and HarDysregTh17Sig (two lists of genes)
+Find logFC direction in NoHar5hVsNaive and HarVsNoHar5h in P435-1 (Harmine study)
+Make lists of these genes (so, 4 lists: (up/down in stim/no-stim and up/down in har/nohar))
+-So, 8 lists total.
+Roast unidirectional in P435-2 Dyrk1aKO - WT
+
+$Dyrk1aKO_stim
+                                  NGenes   PropDown    PropUp Direction     PValue        FDR PValue.Mixed   FDR.Mixed
+HarVsNoHar5hPosLogFC_counterReg      120 0.06666667 0.2250000        Up 0.02829717 0.06832650   0.00019998 0.001199880
+NoHar5hVsNaiveNegLogFC_counterReg    120 0.06666667 0.2250000        Up 0.02829717 0.06832650   0.00049995 0.001799820
+HarVsNoHar5hPosLogFC_dysreg          132 0.06060606 0.2121212        Up 0.03539646 0.06832650   0.00099990 0.002533080
+NoHar5hVsNaiveNegLogFC_dysreg        308 0.05194805 0.1623377        Up 0.03699630 0.06832650   0.01859814 0.018598140
+HarVsNoHar5hNegLogFC_counterReg      122 0.22950820 0.1147541      Down 0.05089491 0.06832650   0.00279972 0.005499450
+NoHar5hVsNaivePosLogFC_counterReg    122 0.22950820 0.1147541      Down 0.05129487 0.06832650   0.00409959 0.006479352
+NoHar5hVsNaivePosLogFC_dysreg        134 0.20895522 0.1119403      Down 0.08639136 0.09867585   0.00799920 0.010598940
+HarVsNoHar5hNegLogFC_dysreg          310 0.11612903 0.1193548        Up 0.69133087 0.69133087   0.01469853 0.016741183

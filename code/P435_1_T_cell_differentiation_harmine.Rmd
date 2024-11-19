@@ -86,13 +86,13 @@ grDevices::pdf.options(useDingbats = FALSE)
 # set up directories
 dirRoot <-
   file.path("/Users/tedwards/Documents/projects/P435_Tcell_differentiation_Khor")
-dirPlots <- file.path("plots")
+dirPlots <- "/Users/tedwards/Documents/projects/P435_Tcell_differentiation_Khor/plots"
 # dirDataSaved <- file.path("data_saved")
 # dataDirOutput <- file.path("data_output")
 dataDirOutput <- "/Users/tedwards/Documents/projects/P435_Tcell_differentiation_Khor/data_output"
 dataDirSaved <- "/Users/tedwards/Documents/projects/P435_Tcell_differentiation_Khor/data_saved"
 
-dataDate <- "2024-05-13"
+dataDate <- "2024-09-12"
 filenameSuffix <- paste0("P435_1_T_cell_differentiation_harmine.", dataDate)
 
 projectNumberGenomicsCore <- "P435-1"
@@ -371,6 +371,116 @@ c7 <- untidy_geneset(c7)
 c7Tcell <- dplyr::select(c7, contains("TCELL"))
 ```
 
+```{r GEO}
+# Load the tools package
+library(tools)
+
+GEODir <- "/Volumes/Bioinformatics/workspace/geo_submissions/tedwards_P435_1_forGEO"
+fastqDir <- "/Volumes/Bioinformatics/workspace/geo_submissions/tedwards_P435_1_forGEO/fastqs"
+countsDir <- "/Volumes/Bioinformatics/workspace/geo_submissions/tedwards_P435_1_forGEO/counts"
+countsDirLocal <- "/Users/tedwards/Documents/projects/P435_Tcell_differentiation_Khor/data_saved/counts_GEO"
+fastqDirLocal <- "/Users/tedwards/Documents/projects/P435_Tcell_differentiation_Khor/data_saved/fastqs_GEO"
+countsDirUnzipped <- "/Users/tedwards/Documents/projects/P435_Tcell_differentiation_Khor/data_saved/counts_GEO_unzipped"
+fastqDirUnzipped <- "/Users/tedwards/Documents/projects/P435_Tcell_differentiation_Khor/data_saved/fastqs_GEO_unzipped"
+
+# Change directory to fastqDir
+setwd(fastqDir)
+
+# Get the filenames
+filenames <- list.files(fastqDir)
+
+# Calculate the md5 checksums
+md5_checksums <- md5sum(file.path(fastqDir, filenames))
+
+# Store the filenames and md5 checksums in a dataframe
+df <- data.frame(filename = filenames, md5_checksum = md5_checksums)
+
+# Save the dataframe to a CSV file
+write.csv(df, file = file.path(GEODir, "fastqChecksums4.csv"), row.names = FALSE)
+
+# change directory to countsDir
+setwd(countsDir)
+
+# store the filename and md5 checksum for each file in the directory in a dataframe
+
+# Get the filenames
+filenames <- list.files(countsDir)
+
+# Calculate the md5 checksums
+md5_checksums <- sapply(file.path(countsDir, filenames), digest, algo = "md5", serialize = FALSE)
+
+# Store the filenames and md5 checksums in a dataframe
+df <- data.frame(filename = filenames, md5_checksum = md5_checksums)
+
+# Save the dataframe to a CSV file
+write.csv(df, file = file.path(GEODir, "countsChecksums3.csv"), row.names = FALSE)
+
+# change directory to countsDirLocal
+setwd(countsDirLocal)
+
+# store the filename and md5 checksum for each file in the directory in a dataframe
+
+# Get the filenames
+filenames <- list.files(countsDirLocal)
+
+# Calculate the md5 checksums
+md5_checksums <- sapply(file.path(countsDirLocal, filenames), digest, algo = "md5", serialize = FALSE)
+
+# Store the filenames and md5 checksums in a dataframe
+df <- data.frame(filename = filenames, md5_checksum = md5_checksums)
+
+# Save the dataframe to a CSV file
+write.csv(df, file = file.path(GEODir, "countsChecksumsLocal.csv"), row.names = FALSE)
+
+# change directory to countsDirLocal
+setwd(fastqDirLocal)
+
+# store the filename and md5 checksum for each file in the directory in a dataframe
+# Get the filenames
+filenames <- list.files(fastqDirLocal)
+
+# Calculate the md5 checksums
+md5_checksums <- sapply(file.path(fastqDirLocal, filenames), digest, algo = "md5", serialize = FALSE)
+
+# Store the filenames and md5 checksums in a dataframe
+df <- data.frame(filename = filenames, md5_checksum = md5_checksums)
+
+# Save the dataframe to a CSV file
+write.csv(df, file = file.path(GEODir, "fastqChecksumsLocal.csv"), row.names = FALSE)
+
+# change directory to countsDirLocal
+setwd(countsDirUnzipped)
+
+# store the filename and md5 checksum for each file in the directory in a dataframe
+
+# Get the filenames
+filenames <- list.files(countsDirUnzipped)
+
+# Calculate the md5 checksums
+md5_checksums <- sapply(file.path(countsDirUnzipped, filenames), digest, algo = "md5", serialize = FALSE)
+
+# Store the filenames and md5 checksums in a dataframe
+df <- data.frame(filename = filenames, md5_checksum = md5_checksums)
+
+# Save the dataframe to a CSV file
+write.csv(df, file = file.path(GEODir, "countsChecksumsLocalUnzipped2.csv"), row.names = FALSE)
+
+# change directory to countsDirLocal
+setwd(fastqDirUnzipped)
+
+# store the filename and md5 checksum for each file in the directory in a dataframe
+# Get the filenames
+filenames <- list.files(fastqDirUnzipped)
+
+# Calculate the md5 checksums
+md5_checksums <- sapply(file.path(fastqDirUnzipped, filenames), digest, algo = "md5", serialize = FALSE)
+
+# Store the filenames and md5 checksums in a dataframe
+df <- data.frame(filename = filenames, md5_checksum = md5_checksums)
+
+# Save the dataframe to a CSV file
+write.csv(df, file = file.path(GEODir, "fastqChecksumsLocalUnzipped2.csv"), row.names = FALSE)
+```
 
 ```{r setHeatmapColors}
 heatmap_colors <-
@@ -1874,6 +1984,172 @@ write.csv(NoHar5hVsNaive_HarVsNoHar5h_intersection_counterregulated_sign, file =
 rm_tmp(ask = FALSE)
 ```
 
+
+```{r P435_1_vs_P435_2_vennDiagrams}
+# load in P435_2 data
+p435_2Dyrk1aKOvsWT_stim_DGE <- read.csv(file.path(dataDirSaved, "P435_2_Dyrk1aKOminWT_stim.csv")) %>%
+  as.data.frame()
+
+# rename $mgi_symbol to $gene
+names(p435_2Dyrk1aKOvsWT_stim_DGE)[names(p435_2Dyrk1aKOvsWT_stim_DGE) == "mgi_symbol"] <- "gene"
+
+
+# HarVsNoHar5h
+
+# All DGE
+# Up in Harmine / Up in KO
+# Up in Harmine / Down in KO
+# Up in noHar / Up in WT
+# Up in noHar / Down in WT
+
+
+
+# make Venn diagrams
+DEG_HarVsNoHar5h.tmp <- HarVsNoHar5h$gene[HarVsNoHar5h$adj.P.Val < 0.05 & abs(HarVsNoHar5h$logFC) > 1]
+DEG_Dyrk1aKOvsWT_stim.tmp <- p435_2Dyrk1aKOvsWT_stim_DGE$gene[p435_2Dyrk1aKOvsWT_stim_DGE$adj.P.Val < 0.05 & abs(p435_2Dyrk1aKOvsWT_stim_DGE$logFC) > 1]
+
+venn_data.tmp <- list("HarVsNoHar5h" = DEG_HarVsNoHar5h.tmp, "Dyrk1aKOvsWT_stim" = DEG_Dyrk1aKOvsWT_stim.tmp)
+
+# use venn() from gplots to be able to get the intersection lists
+venn_result.tmp <- venn(venn_data.tmp)
+
+# retrieve the lists, combine them into a dataframe, save to csv
+HarVsNoHar5h_unique <- attr(venn_result.tmp, "intersections")$`HarVsNoHar5h`
+Dyrk1aKOvsWT_stim_unique <- attr(venn_result.tmp, "intersections")$`Dyrk1aKOvsWT_stim`
+HarVsNoHar5h_Dyrk1aKOvsWT_stim_intersection <- attr(venn_result.tmp, "intersections")$`HarVsNoHar5h:Dyrk1aKOvsWT_stim`
+
+# Find the length of the longest list
+max_length <- max(length(HarVsNoHar5h_unique), length(Dyrk1aKOvsWT_stim_unique), length(HarVsNoHar5h_Dyrk1aKOvsWT_stim_intersection))
+
+# Pad the lists with NA values to make them the same length
+HarVsNoHar5h_unique <- c(HarVsNoHar5h_unique, rep(NA, max_length - length(HarVsNoHar5h_unique)))
+Dyrk1aKOvsWT_stim_unique <- c(Dyrk1aKOvsWT_stim_unique, rep(NA, max_length - length(Dyrk1aKOvsWT_stim_unique)))
+HarVsNoHar5h_Dyrk1aKOvsWT_stim_intersection <- c(HarVsNoHar5h_Dyrk1aKOvsWT_stim_intersection, rep(NA, max_length - length(HarVsNoHar5h_Dyrk1aKOvsWT_stim_intersection)))
+
+# create the dataframe
+intersection_df.tmp <- data.frame(
+  HarVsNoHar5h_unique = HarVsNoHar5h_unique,
+  Dyrk1aKOvsWT_stim_unique = Dyrk1aKOvsWT_stim_unique,
+  HarVsNoHar5h_Dyrk1aKOvsWT_stim_intersection = HarVsNoHar5h_Dyrk1aKOvsWT_stim_intersection
+)
+
+# Save the dataframe to a CSV file
+write.csv(intersection_df.tmp, file = paste0(dataDirOutput, "/HarVsNoHar5h_Dyrk1aKOvsWT_stim_intersections.csv"))
+
+venn_plot.tmp <- ggvenn(venn_data.tmp)
+
+png(filename =
+  file.path(dirRoot,
+    dirPlots,
+    paste0("HarVsNoHar5h_v_Dyrk1aKOvsWT_stim_Venn", filenameSuffix, ".png")),
+width = 6, height = 5,
+units = "in",
+res = 600)
+
+print(venn_plot.tmp)
+
+dev.off()
+rm_tmp(ask = FALSE)
+```
+
+```{r Th17CytokinesFigures_P435_1_P435_2}
+# list of DGEs:
+
+contrast_map <- c(HarVsNoHar96h = "stim_10uM_Harmine_96h - stim_none_96h",
+  Har96hVsNaive = "stim_10uM_Harmine_96h - no_stim_none_0",
+  NoHar96hVsNaive = "stim_none_96h - no_stim_none_0",
+  Dyrk1aKOvsWT_stim = "Dyrk1aKO_stim - WT_stim",
+  Dyrk1aKOvsWT_nostim = "DyrkwaKO_nostim - WT_nostim")
+
+# load in P435_2 data
+p435_2Dyrk1aKOvsWT_stim_DGE <- read.csv(file.path(dataDirSaved, "P435_2_Dyrk1aKOminWT_stim.csv")) %>%
+  as.data.frame()
+
+# rename $mgi_symbol to $gene
+names(p435_2Dyrk1aKOvsWT_stim_DGE)[names(p435_2Dyrk1aKOvsWT_stim_DGE) == "mgi_symbol"] <- "gene"
+
+Dyrk1aKOvsWT_stim <- p435_2Dyrk1aKOvsWT_stim_DGE
+
+p435_2Dyrk1aKOvsWT_nostim_DGE <- read.csv(file.path(dataDirSaved, "P435_2_Dyrk1aKOminWT_nostim.csv")) %>%
+  as.data.frame()
+
+# rename $mgi_symbol to $gene
+names(p435_2Dyrk1aKOvsWT_nostim_DGE)[names(p435_2Dyrk1aKOvsWT_nostim_DGE) == "mgi_symbol"] <- "gene"
+
+Dyrk1aKOvsWT_nostim <- p435_2Dyrk1aKOvsWT_nostim_DGE
+
+genesOfInterest <- c("Il17a", "Il17b", "Il17c", "Il17d", "Il25", "Il17f",
+  "Il17ra", "Il17rb", "Il17rc", "Il17rd", "Il17re",
+  "Il21", "Il22", "Il23", "Il1b", "Il6", "Tgfb1", "Tgfb2", "Tgfb3",
+  "Tnfb", "Tnfa",
+  "Ifng", "Il10", "Il4", "Il12a", "Il12b", "Il33", "Il2", "Il9",
+  "Rora", "Rorc")
+
+limma_volcano_highlight <- function(gtable, outfile = "", title = "", gs = c(), p_cutoff = 0.05, fc_cutoff = 1.0, labp = 0.05) {
+
+  gtable$highlight <- gtable$gene %in% gs # Sometimes this is gtable$symbol. Depends on preprocessing
+  gtable <- gtable[order(gtable$highlight), ]
+
+  ixes <- c(1)
+  if (length(gs) == 0) {
+    ixes <-  which(gtable$adj.P.Val <= p_cutoff)
+  } else {
+    # ixes <- which(gtable$adj.P.Val <= labp & gtable$mgi_symbol %in% gs)
+    ixes <- which(gtable$gene %in% gs) # this version labels your supplied gene names regardless of significance
+  }
+  if (length(ixes) > 80) {
+    ixes <- ixes[1:80]
+  }
+  svg(outfile, height = 5.5, width = 10)
+  p <- ggplot(data = gtable, aes(x = logFC, y = -log10(adj.P.Val), color = highlight)) +
+    geom_point(size = 1.5, shape = 19) + scale_color_manual(values = c("FALSE" = "grey", "TRUE" = "red")) +
+    theme(legend.position = "none") + labs(x = "logFC", y = "-log10 FDR", title = title) +
+    geom_hline(yintercept = -log10(p_cutoff), color = "black", linetype = "dotted", size = 1.0) +
+    geom_vline(xintercept = -fc_cutoff, color = "black", linetype = "dotted", size = 1.0) +
+    geom_vline(xintercept = fc_cutoff, color = "black", linetype = "dotted", size = 1.0) +
+    theme(text = element_text(size = 16))
+  if (length(ixes) > 0) {
+    p <- p + geom_text_repel(data = gtable[ixes, ], aes(logFC, -log10(adj.P.Val), fontface = "bold", label = gene), size = 4, color = "black")
+  }
+  print(p)
+  dev.off()
+  return(p)
+}
+
+# List of DGE results
+dge_results <- list(
+  HarVsNoHar96h = HarVsNoHar96h,
+  Har96hVsNaive = Har96hVsNaive,
+  NoHar96hVsNaive = NoHar96hVsNaive,
+  Dyrk1aKOvsWT_stim = Dyrk1aKOvsWT_stim,
+  Dyrk1aKOvsWT_nostim = Dyrk1aKOvsWT_nostim
+)
+
+# Loop through each DGE result
+for (dge_name in names(dge_results)) {
+  dge <- dge_results[[dge_name]]
+
+  # Intersect genesOfInterest with the genes in the DGE dataframe
+  genes_to_highlight <- intersect(genesOfInterest, dge$gene)
+
+  # Define the title from the contrast_map
+  title <- contrast_map[dge_name]
+
+  # Define the output file path
+  outfile <- paste0(dirPlots, "/", "cytokines_in_", dge_name, ".svg")
+
+  # Create the volcano plot with highlighted genes
+  limma_volcano_highlight(
+    gtable = dge,
+    outfile = outfile,
+    title = title,
+    gs = genes_to_highlight,
+    p_cutoff = 0.05,
+    fc_cutoff = 1.0,
+    labp = 0.05
+  )
+}
+```
 ```{r clusterProfiler}
 # load in human-to-mouse translated gene sets
 mouseGeneSets <- readRDS(file = paste0(dataDirOutput, "/geneSetsHumanToMouseConverted.Rds"))
@@ -2443,7 +2719,7 @@ plotdf$meanAdjPVal <- rowMeans(plotdf[, c("adjPValNoHar", "adjPValHar")])
 plotdf <- plotdf %>%
   dplyr::mutate(distance = abs(logFCNoHar - logFCHar))
 # Get the top 50 genes based on logFCDistance
-top_genes <- NoHar5hVsNaive_HarVsNoHar5h_intersection_counterregulated %>%
+top_genes <- NoHar5hVsNaive_HarVsNoHar5h_intersection_counterregulated_sign %>%
   top_n(50, logFCDistance) %>%
   pull(gene)
 
@@ -2467,7 +2743,55 @@ plot.tmp <- ggplot(plotdf, aes(x = logFCNoHar, y = logFCHar)) +
 print(plot.tmp)
 dev.off()
 
+# non-labeled version
+HarVsNoHar5h_scatterplot <- HarVsNoHar5h[match(NoHar5hVsNaive$gene, HarVsNoHar5h$gene), ]
+png(paste0(dirPlots, "/", dataDate, "logFC_scatterplot_NoHar5hVsNaive_v_HarVsNoHar5h.png"),
+  res = 300, height = 5.5, width = 10,
+  unit = "in")
+plotdf <- data.frame(logFCNoHar = NoHar5hVsNaive$logFC,
+  logFCHar = HarVsNoHar5h_scatterplot$logFC,
+  gene1 = HarVsNoHar5h_scatterplot$gene,
+  gene2 = NoHar5hVsNaive$gene,
+  adjPValNoHar = NoHar5hVsNaive$adj.P.Val,
+  adjPValHar = HarVsNoHar5h_scatterplot$adj.P.Val)
 
+# filter by adj.P.Val and logFC
+adjPValCutoff <- 0.05 # 0.05 # 0.01
+logFCCutoff <- 0
+plotdf <- plotdf %>%
+  filter(adjPValHar < adjPValCutoff, adjPValNoHar < adjPValCutoff) # ,
+# abs(logFCHar) > logFCCutoff, abs(logFCNoHar) > logFCCutoff)
+
+# Create a new variable for the mean of adjPValNoHar and adjPValHar
+plotdf$meanAdjPVal <- rowMeans(plotdf[, c("adjPValNoHar", "adjPValHar")])
+
+# Calculate the distance from the y=x line
+plotdf <- plotdf %>%
+  dplyr::mutate(distance = abs(logFCNoHar - logFCHar))
+# Get the top 50 genes based on logFCDistance
+top_genes <- NoHar5hVsNaive_HarVsNoHar5h_intersection_counterregulated_sign %>%
+  top_n(50, logFCDistance) %>%
+  pull(gene)
+
+# Filter plotdf to only include the top genes
+plotdf_label <- plotdf %>%
+  filter(gene1 %in% top_genes)
+
+# openxlsx::write.xlsx(plotdf_label, paste0(dataDirOutput, "/HarVsNaive_v_NoHarVsNaive_offdiags_5h.xlsx"))
+
+plot.tmp <- ggplot(plotdf, aes(x = logFCNoHar, y = logFCHar)) +
+  geom_point(aes(color = meanAdjPVal), shape = 21, alpha = 0.5) +
+  scale_color_gradient(low = "blue", high = "red") +  # Change the color scale as needed
+  geom_vline(xintercept = 0) +
+  geom_hline(yintercept = 0) +
+  geom_abline() +
+  # ggrepel::geom_text_repel(data = plotdf_label, aes(label = gene1), max.overlaps = 500) +
+  xlab("logFC(Th17 - Naive), no Har") +  # Set x axis label
+  ylab("logFC(Th17 5h Har - Th17 5h noHar)") +  # Set y axis label
+  ggtitle("logFC DE for NoHar5hVsNaive vs HarVNoHar5h")
+
+print(plot.tmp)
+dev.off()
 
 
 # HarVsNaive vs NoHarVsNaive - 24h

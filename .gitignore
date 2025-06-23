@@ -22,4 +22,7 @@
 *.pdf
 *.png
 
+# Ignore MacOS files
+.DS_Store
+
 # Ignore directories
